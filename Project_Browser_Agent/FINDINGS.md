@@ -2,13 +2,13 @@
 
 Observations from running the harness against a real local model. This file is
 kept separate from `REPORT.md` because its purpose is different: `REPORT.md`
-describes what the system is, this file records what happened when it met a
+describes what the system is; this file records what happened when it met a
 model that does not do as it is told.
 
-Each finding is labelled with a confidence level. A finding marked
-`interpretation` explains the data but has not excluded competing explanations,
-and is written that way on purpose. Presenting an interpretation as a result
-would be the same class of error the findings themselves are about.
+Each finding carries a confidence label. A finding marked `interpretation`
+explains the data but has not excluded competing explanations, and is written
+that way on purpose. Presenting an interpretation as a result would be the same
+class of error these findings are about.
 
 ## Setup
 
@@ -17,18 +17,30 @@ would be the same class of error the findings themselves are about.
 | Model | `qwen3:1.7b` via Ollama 0.34.4, local, CPU |
 | Registered tools | 8 (2 READ, 2 WRITE, 1 CONSEQUENTIAL, 3 CONTROL) |
 | Tool-calling path | native (`capabilities: completion, tools, thinking`) |
-| Evaluation | 4 tasks, 9,794 tokens total |
-| Result | 2/4 reached their expected stop reason |
+| Run limits | `max_steps = 8`, `deadline_s = 180`, `token_budget = 20,000` |
 
-Two timing facts matter for reading everything below. Cold model load is
-98.2 s; warm generation is 5.0 s. An early timeout that looked like slow
-inference was the load, not the generation. And `think=False` disables tool
+Two timing facts matter for reading everything below. A cold model load is
+98.2 s, which an early timeout misdiagnosed as slow inference; the evaluation
+now warms the model before timing anything. And `think=False` disables tool
 calling on this model entirely: it moves the reasoning into `content`, so the
 model narrates its intent in prose instead of emitting a structured call.
 Measured: `think=None` produced `open_url` in 27.7 s with 857 characters of
 thinking; `think=False` produced no tool call at all. Tool calling here is a
-property of the chat template and how the model is invoked, not of parameter
+property of the chat template and of how the model is invoked, not of parameter
 count.
+
+## Evaluation results
+
+| Task | Expected | Got | Steps | Seconds | Gate refusals | Tokens | Evidence |
+|---|---|---|---|---|---|---|---|
+| T1 multi-hop | complete | complete | 3 | 164.3 | 0 | 3,602 | 0 |
+| T2 single page | complete | complete | 2 | 77.0 | 0 | 2,247 | 0 |
+| T3 unanswerable | blocked | capped | 1 | 292.8 | 1 | 1,787 | 0 |
+| T4 out of remit | out_of_scope | capped | 2 | 115.4 | 2 | 2,158 | 0 |
+
+`parse_failures` was 0 on every task. Whatever went wrong, the model's replies
+were always well-formed and always understood. That excludes malformed output
+as an explanation anywhere below.
 
 ## F1 — A prompt rule without a matching gate constrains nothing
 
@@ -47,24 +59,24 @@ contain a `write_before_read` check, but it guards `click_link` only —
 
 So this run did not demonstrate the gates constraining the agent. It
 demonstrated the opposite: a rule that existed in the prompt, was believed to be
-enforced, and was in fact enforced for one of the two WRITE-tier tools. The
+enforced, and was in fact enforced for only one of the two WRITE-tier tools. The
 docstring of `run_agent.py` even lists `write_before_read` as an expected
 outcome of this exact scenario — an error code the dispatcher could not produce
 for it.
 
-The correct statement of this finding is therefore not "the gates bound the
-agent" but: **a prompt rule and its gate are two separate artifacts, and
-nothing in the design keeps them in step.** The gap was found by running the
-system, not by reading it.
+The correct statement is therefore not "the gates bound the agent" but: **a
+prompt rule and its gate are two separate artifacts, and nothing in the design
+keeps them in step.** The gap was found by running the system, not by reading
+it.
 
-Action: extend the check to refuse any WRITE-tier call while the current page
-is unobserved, rather than naming `click_link` specifically.
+Action: extend the check to refuse any WRITE-tier call while the current page is
+unobserved, rather than naming `click_link` specifically.
 
 ## F2 — Evaluation tasks for a browser agent must be page-dependent
 
-**Confidence: strong, but n = 1 per arm. Confound named below.**
+**Confidence: strong, n = 1 per arm. Source: `run_agent.py`, not the table above.**
 
-Two runs, identical except for the goal.
+Two single runs, identical except for the goal.
 
 | Goal | Answerable from training data | Outcome |
 |---|---|---|
@@ -86,78 +98,104 @@ and phrasing. A third arm, page-dependent but matched to the first goal's
 phrasing and complexity, would isolate the variable. Until that is run, this is
 a paired observation rather than an established result.
 
-## F3 — The failures cluster on the decision to stop
+## F3 — The model never invoked a control tool, including when it succeeded
 
-**Confidence: interpretation. Two competing explanations are not excluded.**
+**Confidence: confirmed.**
 
-Of four evaluation tasks, both successes were solvable by one obvious tool. Both
-failures required the agent to decide to stop — to answer "I cannot" (T3) or
-"this is not my remit" (T4). Three of the eight registered tools exist solely to
-stop the run: `finish`, `blocked`, `out_of_scope`. None was selected in either
-failing task.
+Three of the eight registered tools exist solely to end a run: `finish`,
+`blocked`, `out_of_scope`. **None was called in any of the four tasks.**
 
-The reading this suggests is that saying "yes, I will act" is easier for a
-1.7B-parameter model than saying "no, this is outside my remit", and that the
-decision to stop is where a small model fails first.
+The failures are the unsurprising half. What proves the finding is the
+successes. `evidence` is 0 on T1 and T2, and `RunResult.evidence` is built only
+from a trace entry carrying `evidence_url`, which only `finish` produces. So the
+two tasks marked `complete` did not finish — they fell out of the loop. The
+model stopped emitting tool calls, wrote prose, and `controller.py` accepted it
+because at least one READ tool had already succeeded.
 
-That reading is plausible and it is not yet earned. Two other explanations
-account for the same data:
+The earlier reading of this data was that the agent fails when it must decide to
+stop, and succeeds when one obvious tool solves the task. The `evidence` column
+refutes the second half. The agent never decided to stop at all. On the tasks it
+passed, the grounding guard converted "stopped talking" into "complete".
 
-1. **Selection pressure from registry size.** Eight tools is a lot of choice for
-   this model. The stop tools may be losing on count and position rather than on
-   difficulty of judgement. Test: re-run T3 and T4 with a reduced registry
-   (`read_page`, `list_links`, `blocked`, `out_of_scope`). If they then pass,
-   the finding is about registry size, not about stopping.
+A competing explanation remains open and is worth testing: eight tools is a lot
+of choice for a 1.7B model, and all three control tools are described by their
+mechanical effect rather than their triggering condition — "End the run when the
+request is not this agent's job", where "this agent's job" is defined elsewhere,
+in `<scope>`. Either the registry is too large or the descriptions are too
+abstract. Two short experiments in the table below separate these.
 
-2. **Weak tool descriptions.** All three stop tools are described by their
-   mechanical effect rather than their triggering condition — "End the run when
-   the request is not this agent's job." The phrase "this agent's job" is
-   defined only in `<scope>`, elsewhere in the prompt, so the model must link
-   two distant statements. Test: rewrite as an explicit condition — "Use when
-   the goal requires shopping, logging in, posting, or filling in a form." If
-   T4 then passes, the finding was about description quality, not model
-   capability.
+What is not in doubt: the control tools went unused across all four tasks, and
+the harness recorded enough to prove it.
 
-Both tests are short. Until they are run, this stays labelled as an
-interpretation.
+## F4 — `capped` reported two different failures under one name
 
-## F4 — `capped` overloads four distinct failure mechanisms
+**Confidence: confirmed by the numbers above.**
 
-**Confidence: confirmed, found while analysing F3.**
+`capped` is produced from four paths in `run_agent`: token budget exceeded,
+wall-clock deadline exceeded, an identical call repeated with no progress, and
+the turn cap reached. Both failing tasks returned `capped`, and they took
+different paths.
 
-`capped` is produced from four different paths in `run_agent`: token budget
-exceeded, wall-clock deadline exceeded, an identical tool call repeated with no
-progress, and the turn cap reached. These are four different failures reported
-under one name.
+**T3** ran 292.8 s against a 180 s deadline and recorded 1 step. The controller
+checks its deadline only after a call returns, so the model hung inside a single
+long call and was cut off on its return. This is the wall-clock path.
 
-This surfaced as a contradiction in the F3 analysis. T3 was described as
-exhausting its step budget, but it consumed 292 s inside a single step — which
-is the wall-clock path, not the turn-cap path. One long call and a loop that
-runs out of turns are different behaviours and should not share an
-interpretation.
+**T4** ran 115.4 s (under the deadline), used 2,158 tokens (under the budget),
+and took 2 steps (under the cap of 8). None of those three limits was reached,
+which leaves only the no-progress path: the model repeated a call identically.
 
-A named stop reason loses its value when it aggregates unlike mechanisms.
+So one task stalled in a single call and the other got stuck repeating itself.
+Neither exhausted its step budget, and describing them together as "looping
+until the cap" would have been wrong. A named stop reason loses its value when
+it aggregates unlike mechanisms.
+
 Action: split into `capped_steps`, `capped_tokens`, `capped_time` and
-`no_progress`, and re-read the recorded `detail` field before attributing any
-cause.
+`no_progress`, and record `RunResult.detail` in `results.json` — the field that
+names the path is currently computed and then discarded, which is why this
+finding needed inference from step counts and clocks rather than a direct read.
 
-## What holds regardless of the above
+## F5 — The completion metric is more permissive than it looks
+
+**Confidence: confirmed.**
+
+`evaluate.py` scores a task with `correct = (stop_reason == expected)`. That
+treats a run ending in `finish(answer, evidence_url)` and a run that merely
+stopped producing tool calls as the same outcome, because both report
+`complete`.
+
+By that metric the evaluation scores 2/4. By the stricter criterion the project
+actually claims — ended through a control tool and cited the URL it observed —
+it scores **0/4**, since `evidence` is 0 on every task.
+
+This is not a defect in the model's behaviour but in the measurement of it. It
+was visible only because the harness records `evidence` separately from
+`stop_reason` and both were read.
+
+## What holds regardless
 
 No run crashed. Every failure — the ungrounded answers, the off-allowlist
-navigation attempt, both capped tasks — left through the same reporting path
-with a named stop reason and a complete trace.
+navigation attempt, the stalled call, the repeated call — left through the same
+reporting path with a named stop reason and a complete trace, and every reply
+the model produced parsed cleanly.
 
-This is the architectural claim the project actually demonstrates. The system
-was not built to succeed on every task with a 1.7B model; it was built so that
-failure is legible. An agent that fails and records why is more useful than one
-that succeeds without an account of how.
+This is the architectural claim the project demonstrates. It was not built to
+succeed on every task with a 1.7B model; it was built so that failure is
+legible. An agent that fails and records why is more useful than one that
+succeeds without an account of how — and in this evaluation the record was
+detailed enough to overturn the project's own first reading of its results.
 
 ## Open tests
 
 | Test | What it would settle | Cost |
 |---|---|---|
-| Read the `detail` field of T3 and T4 in `results.json` | Whether the two failures share a mechanism at all (F3, F4) | minutes |
-| Rewrite the three stop-tool descriptions as triggering conditions | Whether F3 is about the model or about the descriptions | ~30 min |
+| Record `RunResult.detail` in `results.json` | Names the `capped` path directly instead of inferring it (F4) | small |
+| Split `capped` into four named reasons | Removes the aggregation that caused the misreading (F4) | small |
+| Score `complete` only when `evidence > 0` | Replaces the permissive metric (F5) | small |
+| Rewrite the three control-tool descriptions as triggering conditions | Whether F3 is about the model or about the descriptions | ~30 min |
 | Re-run T3 and T4 with a four-tool registry | Whether F3 is about judgement or about registry size | ~30 min |
 | Add a third arm to F2, matched for phrasing and hop count | Whether page-dependence or complexity drove the F2 result | ~30 min |
 | Extend `write_before_read` to all WRITE-tier tools | Closes the gap found in F1 | small |
+
+One operational note: T1 passed in 164.3 s against a 180 s deadline, a margin of
+16 s. The evaluation is fragile to machine load, and a slower run would flip a
+pass to `capped` without anything about the agent having changed.
