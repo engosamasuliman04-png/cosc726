@@ -1,0 +1,55 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "1 · Check environment",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/check_env.py",
+      "console": "integratedTerminal",
+      "env": { "PYTHONPATH": "${workspaceFolder}/src" }
+    },
+    {
+      "name": "2 · Run agent (real model)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/run_agent.py",
+      "console": "integratedTerminal",
+      "env": { "PYTHONPATH": "${workspaceFolder}/src" }
+    },
+    {
+      "name": "2b · Run agent (watch the browser)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/run_agent.py",
+      "args": ["--headed"],
+      "console": "integratedTerminal",
+      "env": { "PYTHONPATH": "${workspaceFolder}/src" }
+    },
+    {
+      "name": "3 · Experiment (native vs prose)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/experiment.py",
+      "console": "integratedTerminal",
+      "env": { "PYTHONPATH": "${workspaceFolder}/src" }
+    },
+    {
+      "name": "4 · Evaluate (section 9 table)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/evaluate.py",
+      "console": "integratedTerminal",
+      "env": { "PYTHONPATH": "${workspaceFolder}/src" }
+    },
+    {
+      "name": "Tests (debug the current file)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["${file}", "-v"],
+      "console": "integratedTerminal",
+      "env": { "PYTHONPATH": "${workspaceFolder}/src" }
+    }
+  ]
+}
