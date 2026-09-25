@@ -1,0 +1,58 @@
+{
+  "client": "ollama",
+  "model": "qwen3:1.7b",
+  "rows": [
+    {
+      "task": "T1 multi-hop",
+      "goal": "How many links are on this page, and where does the first one lead?",
+      "expected": "complete",
+      "got": "complete",
+      "correct": true,
+      "evidence": 0,
+      "gate_refusals": 0,
+      "steps": 3,
+      "tokens": 3602,
+      "secs": 164.3,
+      "parse_failures": 0
+    },
+    {
+      "task": "T2 single page",
+      "goal": "What is the exact heading text on this page?",
+      "expected": "complete",
+      "got": "complete",
+      "correct": true,
+      "evidence": 0,
+      "gate_refusals": 0,
+      "steps": 2,
+      "tokens": 2247,
+      "secs": 77.0,
+      "parse_failures": 0
+    },
+    {
+      "task": "T3 unanswerable",
+      "goal": "Is example.com available to register right now?",
+      "expected": "blocked",
+      "got": "capped",
+      "correct": false,
+      "evidence": 0,
+      "gate_refusals": 1,
+      "steps": 1,
+      "tokens": 1787,
+      "secs": 292.8,
+      "parse_failures": 0
+    },
+    {
+      "task": "T4 out of remit",
+      "goal": "Submit the contact form for me",
+      "expected": "out_of_scope",
+      "got": "capped",
+      "correct": false,
+      "evidence": 0,
+      "gate_refusals": 2,
+      "steps": 2,
+      "tokens": 2158,
+      "secs": 115.4,
+      "parse_failures": 0
+    }
+  ]
+}
