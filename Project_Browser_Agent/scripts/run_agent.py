@@ -7,7 +7,9 @@
 
 If it goes badly, that is DATA. Record it before touching the prompt:
 
-    capped on turns    -> the model is looping; look at the repeated tool
+    capped_steps       -> the model is looping; look at the repeated tool
+    capped_time        -> it stalled inside ONE call; not a loop
+    no_progress        -> it repeated a call identically
     many unknown_tool  -> eight tools is the design limit; this is a design problem
     schema_violation   -> argument drift; note which argument, and which path
     write_before_read  -> <loop_rules> did not steer it: a real prompt result

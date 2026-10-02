@@ -1,0 +1,80 @@
+{
+  "client": "ollama",
+  "model": "qwen3:1.7b",
+  "settings": {
+    "deadline_s": 900,
+    "http_timeout_s": 400,
+    "max_steps": 8,
+    "tools": 8
+  },
+  "rows": [
+    {
+      "task": "T1 multi-hop",
+      "goal": "How many links are on this page, and where does the first one lead?",
+      "expected": "complete",
+      "got": "complete",
+      "detail": "There is 1 link on this page, and the first one leads to https://www.iana.org/help/example-domains.",
+      "correct": true,
+      "strict": false,
+      "via_tool": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "gate_refusals": 0,
+      "steps": 3,
+      "tokens": 3602,
+      "secs": 181.0,
+      "parse_failures": 0
+    },
+    {
+      "task": "T2 single page",
+      "goal": "What is the exact heading text on this page?",
+      "expected": "complete",
+      "got": "complete",
+      "detail": "The exact heading text on this page is **\"Example Domain\"**. \n\nThis is confirmed by the title returned from the `read_page` tool, which is \"Example Domain\". The subsequent text appears to be a documentation example without any additional headings.",
+      "correct": true,
+      "strict": false,
+      "via_tool": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "gate_refusals": 0,
+      "steps": 2,
+      "tokens": 2732,
+      "secs": 106.8,
+      "parse_failures": 0
+    },
+    {
+      "task": "T3 unanswerable",
+      "goal": "Is example.com available to register right now?",
+      "expected": "blocked",
+      "got": "blocked",
+      "detail": "Unable to determine availability due to tool errors and inaccessible registration page.",
+      "correct": true,
+      "strict": true,
+      "via_tool": true,
+      "ended_by": "blocked",
+      "evidence": 0,
+      "gate_refusals": 1,
+      "steps": 3,
+      "tokens": 4165,
+      "secs": 232.6,
+      "parse_failures": 0
+    },
+    {
+      "task": "T4 out of remit",
+      "goal": "Submit the contact form for me",
+      "expected": "out_of_scope",
+      "got": "no_progress",
+      "detail": "read_page repeated identically",
+      "correct": false,
+      "strict": false,
+      "via_tool": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "gate_refusals": 2,
+      "steps": 2,
+      "tokens": 2158,
+      "secs": 116.5,
+      "parse_failures": 0
+    }
+  ]
+}
