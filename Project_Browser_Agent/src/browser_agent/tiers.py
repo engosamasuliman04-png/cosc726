@@ -25,7 +25,8 @@ class Tier(str, Enum):
 # named separately now; CAP_REASONS keeps "did it cap at all?" askable in one go.
 CAP_REASONS = {"capped_steps", "capped_tokens", "capped_time", "no_progress"}
 
-TERMINAL_REASONS = ({"complete", "blocked", "out_of_scope", "pending_approval"}
+TERMINAL_REASONS = ({"complete", "blocked", "out_of_scope", "pending_approval",
+                     "unterminated"}
                     | CAP_REASONS)
 
 

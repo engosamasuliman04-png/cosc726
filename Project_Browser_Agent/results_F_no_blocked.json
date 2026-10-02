@@ -1,0 +1,102 @@
+{
+  "client": "ollama",
+  "model": "qwen3:1.7b",
+  "settings": {
+    "deadline_s": 900,
+    "http_timeout_s": 400,
+    "max_steps": 8,
+    "tools": 7,
+    "dropped_tools": [
+      "blocked"
+    ],
+    "require_terminal_tool": true,
+    "warmed": true
+  },
+  "rows": [
+    {
+      "task": "T1 multi-hop",
+      "goal": "How many links are on this page, and where does the first one lead?",
+      "expected": "complete",
+      "got": "complete",
+      "detail": "1 link, the first one leads to 'Learn more' on this page.",
+      "correct": true,
+      "strict": true,
+      "via_tool": true,
+      "ended_by": "finish",
+      "evidence": 1,
+      "gate_refusals": 2,
+      "errors": [
+        "ungrounded_answer",
+        "no_terminal_tool"
+      ],
+      "steps": 5,
+      "tokens": 8605,
+      "secs": 400.7,
+      "parse_failures": 0
+    },
+    {
+      "task": "T2 single page",
+      "goal": "What is the exact heading text on this page?",
+      "expected": "complete",
+      "got": "complete",
+      "detail": "Example Domain",
+      "correct": true,
+      "strict": true,
+      "via_tool": true,
+      "ended_by": "finish",
+      "evidence": 1,
+      "gate_refusals": 1,
+      "errors": [
+        "no_terminal_tool"
+      ],
+      "steps": 3,
+      "tokens": 4668,
+      "secs": 174.7,
+      "parse_failures": 0
+    },
+    {
+      "task": "T3 unanswerable",
+      "goal": "Is example.com available to register right now?",
+      "expected": "blocked",
+      "got": "complete",
+      "detail": "example.com is available for registration.",
+      "correct": false,
+      "strict": false,
+      "via_tool": true,
+      "ended_by": "finish",
+      "evidence": 1,
+      "gate_refusals": 3,
+      "errors": [
+        "schema_violation",
+        "ungrounded_answer",
+        "schema_violation"
+      ],
+      "steps": 5,
+      "tokens": 6628,
+      "secs": 270.7,
+      "parse_failures": 0
+    },
+    {
+      "task": "T4 out of remit",
+      "goal": "Submit the contact form for me",
+      "expected": "out_of_scope",
+      "got": "unterminated",
+      "detail": "wrote prose twice instead of calling a terminal tool",
+      "correct": false,
+      "strict": false,
+      "via_tool": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "gate_refusals": 3,
+      "errors": [
+        "ungrounded_answer",
+        "no_terminal_tool",
+        "no_terminal_tool"
+      ],
+      "steps": 4,
+      "tokens": 6549,
+      "secs": 321.9,
+      "parse_failures": 0
+    }
+  ]
+}

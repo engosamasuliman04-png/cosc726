@@ -69,6 +69,37 @@ async def main():
     ap.add_argument("--deadline", type=int, default=900,
                     help="agent wall-clock budget per task. Generous on purpose: "
                          "a tight deadline turns CPU load into a result.")
+    # The same goal, with the same limits and the same model, took a different
+    # trajectory under this script than under run_agent.py - which does NOT warm
+    # the model first. Two consecutive runs of run_agent.py were byte-identical,
+    # so the variation is between the harnesses, not between runs. The warm-up is
+    # the only difference left in the code; everything else (page, allowlist,
+    # limits, backend options) is the same. This flag makes that testable instead
+    # of assumed: run once with it and once without, and compare the traces.
+    ap.add_argument("--no-warm", action="store_true",
+                    help="skip the warm-up call. Isolates whether warming the "
+                         "model changes the trajectory, at the cost of a ~100s "
+                         "cold load landing inside task 1.")
+    # ABLATION. Three different descriptions of the three control tools have now
+    # been measured. Each changed behaviour; none produced a single out_of_scope
+    # call, while blocked was selected more and more - in run D it took T1, a
+    # perfectly answerable task, and handed the goal back to the user as a
+    # question. Wording is clearly a lever, but not the one that reaches
+    # out_of_scope, so stop turning it.
+    #
+    # Removing a tool from the REGISTRY while leaving it in the prompt is
+    # deliberate: the model may still try it, the dispatcher answers
+    # `unknown_tool`, and the model must choose again. That is exactly the
+    # question - when its preferred stop tool is refused, does it reach
+    # out_of_scope, or does it not reach it at all? Nothing else changes.
+    ap.add_argument("--drop-tool", action="append", default=[], metavar="NAME",
+                    help="remove a tool from the registry (repeatable). The prompt "
+                         "still lists it, so a call to it is refused as unknown_tool "
+                         "rather than silently unavailable.")
+    ap.add_argument("--allow-prose-exit", action="store_true",
+                    help="restore the free exit: accept grounded prose as complete, "
+                         "without a terminal tool call. Reproduces the runs taken "
+                         "before the termination guard existed.")
     args = ap.parse_args()
 
     # The controller checks its deadline only AFTER a call returns, so it cannot
@@ -82,7 +113,7 @@ async def main():
             f"({args.deadline}s), or a hanging call crashes the run instead of "
             "stopping it with a named reason.")
 
-    if args.client != "heuristic":
+    if args.client != "heuristic" and not args.no_warm:
         print(f"warming {args.model} (a cold load is ~100s and would skew task 1)...",
               flush=True)
         t0 = time.time()
@@ -102,9 +133,14 @@ async def main():
             pg = await b.new_page()
             await pg.goto("https://example.com")
             _, reg, disp = build_agent(pg, ALLOW)
+            for name in args.drop_tool:      # the dispatcher shares this dict
+                if reg.pop(name, None) is None:
+                    raise SystemExit(f"--drop-tool {name}: not in the registry "
+                                     f"({sorted(reg)})")
             t0 = time.time()
             r = await run_agent(client, disp, reg, SYSTEM, goal,
-                                max_steps=8, deadline_s=args.deadline)
+                                max_steps=8, deadline_s=args.deadline,
+                                require_terminal_tool=not args.allow_prose_exit)
             secs = time.time() - t0
             await b.close()
 
@@ -136,6 +172,12 @@ async def main():
             "ended_by": ended_by or "-",                   # WHICH one, or "-" for fall-through
             "evidence": len(r.evidence),                   # ACCURACY (grounding)
             "gate_refusals": sum(1 for t in r.trace if t["obs"].get("error")),  # ROBUSTNESS
+            # The COUNT without the NAMES is the `capped` mistake again. A run
+            # reporting "2 refusals" says nothing about whether the model sent a
+            # malformed call, broke a schema, or was stopped by a tier rule - and
+            # those need different fixes. One of these lists is why `finish` was
+            # refused in one harness and accepted in another.
+            "errors": [t["obs"]["error"] for t in r.trace if t["obs"].get("error")],
             "steps": r.steps_used, "tokens": r.tokens_used, # EFFICIENCY
             "secs": round(secs, 1),
             "parse_failures": getattr(client, "parse_failures", 0),
@@ -154,6 +196,8 @@ async def main():
     for r in rows:                      # the cap path, named - no more inferring
         if not r["correct"]:
             print(f"  {r['task']:<18} {r['got']:<14} {r['detail']}")
+        if r["errors"]:
+            print(f"  {r['task']:<18} {'refused':<14} {' -> '.join(r['errors'])}")
 
     n, strict = sum(r["correct"] for r in rows), sum(r["strict"] for r in rows)
     print(f"\ncompletion (loose) : {n}/{len(rows)}   "
@@ -176,7 +220,10 @@ async def main():
     Path(args.out).write_text(json.dumps(
         {"client": args.client, "model": args.model,
          "settings": {"deadline_s": args.deadline, "http_timeout_s": args.timeout,
-                      "max_steps": 8, "tools": 8},
+                      "max_steps": 8, "tools": 8 - len(args.drop_tool),
+                      "dropped_tools": args.drop_tool,
+                      "require_terminal_tool": not args.allow_prose_exit,
+                      "warmed": not args.no_warm},
          "rows": rows}, indent=2))
     print(f"\nwritten: {args.out}")
 

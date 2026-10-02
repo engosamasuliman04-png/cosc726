@@ -1,0 +1,80 @@
+{
+  "client": "ollama",
+  "model": "qwen3:1.7b",
+  "settings": {
+    "deadline_s": 900,
+    "http_timeout_s": 400,
+    "max_steps": 8,
+    "tools": 8
+  },
+  "rows": [
+    {
+      "task": "T1 multi-hop",
+      "goal": "How many links are on this page, and where does the first one lead?",
+      "expected": "complete",
+      "got": "complete",
+      "detail": "There is 1 link on this page, and the first link leads to \"Learn more\".",
+      "correct": true,
+      "strict": false,
+      "via_tool": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "gate_refusals": 0,
+      "steps": 2,
+      "tokens": 2322,
+      "secs": 95.4,
+      "parse_failures": 0
+    },
+    {
+      "task": "T2 single page",
+      "goal": "What is the exact heading text on this page?",
+      "expected": "complete",
+      "got": "complete",
+      "detail": "The exact heading text on this page is \"Learn more\". \n\n**Evidence:** The page contains a link with the text \"Learn more\" at index 0 in the list_links result.",
+      "correct": true,
+      "strict": false,
+      "via_tool": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "gate_refusals": 1,
+      "steps": 3,
+      "tokens": 3725,
+      "secs": 132.4,
+      "parse_failures": 0
+    },
+    {
+      "task": "T3 unanswerable",
+      "goal": "Is example.com available to register right now?",
+      "expected": "blocked",
+      "got": "complete",
+      "detail": "The current page does not provide information about the availability of example.com for registration. The text states that example.com is for documentation purposes and not a service, but does not mention registration status. Since no tool result contains the necessary information, the answer cannot be determined from public web pages.\n\n**Answer:**  \nBlocked. The registration availability of example.com cannot be determined from public web pages. Check with a domain registrar directly.",
+      "correct": false,
+      "strict": false,
+      "via_tool": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "gate_refusals": 1,
+      "steps": 4,
+      "tokens": 5339,
+      "secs": 176.1,
+      "parse_failures": 0
+    },
+    {
+      "task": "T4 out of remit",
+      "goal": "Submit the contact form for me",
+      "expected": "out_of_scope",
+      "got": "blocked",
+      "detail": "Can I submit the contact form via public web pages?",
+      "correct": false,
+      "strict": false,
+      "via_tool": true,
+      "ended_by": "blocked",
+      "evidence": 0,
+      "gate_refusals": 1,
+      "steps": 2,
+      "tokens": 2218,
+      "secs": 65.6,
+      "parse_failures": 0
+    }
+  ]
+}

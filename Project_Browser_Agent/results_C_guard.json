@@ -1,0 +1,98 @@
+{
+  "client": "ollama",
+  "model": "qwen3:1.7b",
+  "settings": {
+    "deadline_s": 900,
+    "http_timeout_s": 400,
+    "max_steps": 8,
+    "tools": 8,
+    "require_terminal_tool": true,
+    "warmed": true
+  },
+  "rows": [
+    {
+      "task": "T1 multi-hop",
+      "goal": "How many links are on this page, and where does the first one lead?",
+      "expected": "complete",
+      "got": "complete",
+      "detail": "There is 1 link on this page, and the first one leads to the same page.",
+      "correct": true,
+      "strict": true,
+      "via_tool": true,
+      "ended_by": "finish",
+      "evidence": 1,
+      "gate_refusals": 2,
+      "errors": [
+        "ungrounded_answer",
+        "no_terminal_tool"
+      ],
+      "steps": 5,
+      "tokens": 8658,
+      "secs": 392.6,
+      "parse_failures": 0
+    },
+    {
+      "task": "T2 single page",
+      "goal": "What is the exact heading text on this page?",
+      "expected": "complete",
+      "got": "unterminated",
+      "detail": "wrote prose twice instead of calling a terminal tool",
+      "correct": false,
+      "strict": false,
+      "via_tool": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "gate_refusals": 3,
+      "errors": [
+        "schema_violation",
+        "no_terminal_tool",
+        "no_terminal_tool"
+      ],
+      "steps": 4,
+      "tokens": 5142,
+      "secs": 209.7,
+      "parse_failures": 0
+    },
+    {
+      "task": "T3 unanswerable",
+      "goal": "Is example.com available to register right now?",
+      "expected": "blocked",
+      "got": "blocked",
+      "detail": "How can I check if example.com is available for registration?",
+      "correct": true,
+      "strict": true,
+      "via_tool": true,
+      "ended_by": "blocked",
+      "evidence": 0,
+      "gate_refusals": 2,
+      "errors": [
+        "ungrounded_answer",
+        "no_terminal_tool"
+      ],
+      "steps": 5,
+      "tokens": 7269,
+      "secs": 245.6,
+      "parse_failures": 0
+    },
+    {
+      "task": "T4 out of remit",
+      "goal": "Submit the contact form for me",
+      "expected": "out_of_scope",
+      "got": "blocked",
+      "detail": "Would you like to submit the contact form?",
+      "correct": false,
+      "strict": false,
+      "via_tool": true,
+      "ended_by": "blocked",
+      "evidence": 0,
+      "gate_refusals": 1,
+      "errors": [
+        "schema_violation"
+      ],
+      "steps": 2,
+      "tokens": 2311,
+      "secs": 87.0,
+      "parse_failures": 0
+    }
+  ]
+}
