@@ -49,10 +49,32 @@ def build_registry(tools: BrowserTools) -> dict[str, ToolSpec]:
             "Click the link with the given index from the last list_links on THIS page."),
         "submit_form":  ToolSpec(tools.submit_form, Tier.CONSEQUENTIAL, SubmitFormArgs,
             "PROPOSE a form submission. Submits nothing; creates a pending request."),
+        # EXPERIMENT B. The three CONTROL tools were described by their mechanical
+        # effect - "End the run when the request is not this agent's job" - which
+        # states WHAT the tool does and leaves WHEN to infer from <scope>, further
+        # up the prompt. In the baseline the model selected `blocked` and never
+        # `finish` or `out_of_scope`, and the hypothesis is that `blocked`'s
+        # trigger is readable from the goal itself while the other two are not.
+        # These say WHEN, in the goal's own vocabulary. Nothing else changed.
         "finish":       ToolSpec(t_finish, Tier.CONTROL, FinishArgs,
-            "End the run with an answer and the URL you observed it on."),
+            "Use as soon as a tool result contains the answer. Pass that answer and "
+            "the URL of the page the result came from."),
+        # EXPERIMENT D. B's descriptions said WHEN, and behaviour moved: T4 went
+        # from repeating itself to selecting a control tool. It selected the wrong
+        # one. `blocked` read "something no public page can tell you", which is
+        # true of "submit the contact form" as well, so the broader description
+        # absorbed a case belonging to its neighbour. Tool descriptions are not
+        # independent: widening one takes cases from another.
+        #
+        # The dividing line here is KNOWING versus DOING, stated on both sides.
+        # Prediction, written before the run: T4 moves to out_of_scope, T3 stays
+        # blocked, strict rises to 2/4. If T3 also moves, this boundary is too
+        # sharp and the narrowing broke a case that was already correct.
         "blocked":      ToolSpec(t_blocked, Tier.CONTROL, BlockedArgs,
-            "End the run by asking the user ONE question you cannot resolve yourself."),
+            "Use when the goal asks for a FACT that no public page states - live "
+            "availability, the contents of a private account, something only the "
+            "user knows. Not for goals that ask you to DO something."),
         "out_of_scope": ToolSpec(t_out_of_scope, Tier.CONTROL, OutOfScopeArgs,
-            "End the run when the request is not this agent's job."),
+            "Use when the goal asks you to DO something rather than find something "
+            "out: shopping, signing in, posting, filling in or submitting a form."),
     }

@@ -64,7 +64,8 @@ async def test_the_two_complete_paths_are_distinguishable_from_the_trace():
     via_tool = await run([R("read_page", {}),
                           R("finish", {"answer": "x",
                                        "evidence_url": "https://example.com/"})])
-    fell_through = await run([R("read_page", {}), R(t="the heading is Example Domain")])
+    fell_through = await run([R("read_page", {}), R(t="the heading is Example Domain")],
+                             require_terminal_tool=False)
 
     assert via_tool.stop_reason == fell_through.stop_reason == "complete"
 
@@ -107,9 +108,36 @@ async def test_model_can_correct_itself():
     assert res.trace[0]["obs"]["error"] == "ungrounded_answer"
     assert len(res.evidence) == 1
 
-async def test_grounded_plain_answer_still_completes():
-    res = await run([R("read_page", {}), R(t="It reserves example.com.")])
+# -------------------------------------------------- the termination guard
+async def test_grounded_plain_answer_completes_only_when_prose_is_allowed():
+    """Grounded prose used to be accepted as `complete`. That was the free exit:
+    the model could answer without ever spending a call on `finish`, so no run
+    ever produced an evidence_url. The old behaviour is still reachable, because
+    the before/after comparison needs it."""
+    res = await run([R("read_page", {}), R(t="It reserves example.com.")],
+                    require_terminal_tool=False)
+    assert res.stop_reason == "complete" and len(res.evidence) == 0
+
+async def test_prose_is_refused_and_the_model_can_correct():
+    """The guard hands the model its own output back rather than ending the run,
+    so a model that CAN call the tool still gets there - which is the whole point:
+    the point is to remove a cheaper option, not to fail the task."""
+    res = await run([R("read_page", {}),
+                     R(t="The heading is Example Domain."),
+                     R("finish", {"answer": "Example Domain",
+                                  "evidence_url": "https://example.com/"})])
     assert res.stop_reason == "complete"
+    assert res.trace[1]["obs"]["error"] == "no_terminal_tool"
+    assert len(res.evidence) == 1
+
+async def test_two_prose_replies_end_the_run_with_a_named_reason():
+    """A model that will not use the tool is not left looping: it stops as
+    `unterminated`, which is a result, not a crash."""
+    res = await run([R("read_page", {}),
+                     R(t="It reserves example.com."),
+                     R(t="As I said, it reserves example.com.")])
+    assert res.stop_reason == "unterminated"
+    assert len(res.evidence) == 0
 
 # ------------------------------------------------------- derived fields
 async def test_derived_fields_cannot_disagree_with_trace():

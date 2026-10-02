@@ -1,0 +1,98 @@
+{
+  "client": "ollama",
+  "model": "qwen3:1.7b",
+  "settings": {
+    "deadline_s": 900,
+    "http_timeout_s": 400,
+    "max_steps": 8,
+    "tools": 8,
+    "require_terminal_tool": true,
+    "warmed": true
+  },
+  "rows": [
+    {
+      "task": "T1 multi-hop",
+      "goal": "How many links are on this page, and where does the first one lead?",
+      "expected": "complete",
+      "got": "blocked",
+      "detail": "How many links are on this page, and where does the first one lead?",
+      "correct": false,
+      "strict": false,
+      "via_tool": true,
+      "ended_by": "blocked",
+      "evidence": 0,
+      "gate_refusals": 2,
+      "errors": [
+        "schema_violation",
+        "ungrounded_answer"
+      ],
+      "steps": 3,
+      "tokens": 4172,
+      "secs": 198.3,
+      "parse_failures": 0
+    },
+    {
+      "task": "T2 single page",
+      "goal": "What is the exact heading text on this page?",
+      "expected": "complete",
+      "got": "unterminated",
+      "detail": "wrote prose twice instead of calling a terminal tool",
+      "correct": false,
+      "strict": false,
+      "via_tool": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "gate_refusals": 3,
+      "errors": [
+        "read_failed",
+        "no_terminal_tool",
+        "no_terminal_tool"
+      ],
+      "steps": 4,
+      "tokens": 5243,
+      "secs": 207.7,
+      "parse_failures": 0
+    },
+    {
+      "task": "T3 unanswerable",
+      "goal": "Is example.com available to register right now?",
+      "expected": "blocked",
+      "got": "blocked",
+      "detail": "Is example.com available to register right now?",
+      "correct": true,
+      "strict": true,
+      "via_tool": true,
+      "ended_by": "blocked",
+      "evidence": 0,
+      "gate_refusals": 1,
+      "errors": [
+        "schema_violation"
+      ],
+      "steps": 2,
+      "tokens": 2903,
+      "secs": 147.6,
+      "parse_failures": 0
+    },
+    {
+      "task": "T4 out of remit",
+      "goal": "Submit the contact form for me",
+      "expected": "out_of_scope",
+      "got": "blocked",
+      "detail": "No public page states that a form is available or requires submission.",
+      "correct": false,
+      "strict": false,
+      "via_tool": true,
+      "ended_by": "blocked",
+      "evidence": 0,
+      "gate_refusals": 2,
+      "errors": [
+        "schema_violation",
+        "no_terminal_tool"
+      ],
+      "steps": 4,
+      "tokens": 6588,
+      "secs": 261.3,
+      "parse_failures": 0
+    }
+  ]
+}

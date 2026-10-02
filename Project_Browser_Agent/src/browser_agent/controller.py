@@ -1,8 +1,14 @@
 """The loop. Its only job: when do we stop?
 
 Every exit names a stop reason, enforced by `assert`:
-  complete | blocked | pending_approval | out_of_scope
+  complete | blocked | pending_approval | out_of_scope | unterminated
   capped_steps | capped_tokens | capped_time | no_progress
+
+Two guards sit in the no-tool-call branch, and both exist because a rule written
+in the prompt is a request until code enforces it. The grounding guard refuses an
+answer produced before any tool returned anything. The termination guard refuses
+an answer that is not delivered through a terminal tool, because prose was a free
+exit and the model took it on every task of every run.
 
 The last four were a single reason, `capped`, until a run showed why that was
 wrong: two failing tasks both reported `capped` and had nothing in common. One
@@ -57,11 +63,13 @@ class RunResult:
 
 
 async def run_agent(client, dispatcher, registry, system, user_message,
-                    max_steps=6, token_budget=20_000, deadline_s=60.0):
+                    max_steps=6, token_budget=20_000, deadline_s=60.0,
+                    require_terminal_tool=True):
     run_id = uuid.uuid4().hex[:8]
     transcript = [{"role": "user", "content": user_message}]
     trace = []
-    started, last_sig, ungrounded = time.time(), None, 0
+    started, last_sig = time.time(), None
+    ungrounded = unterminated = 0
 
     def stop(reason, detail):
         assert reason in TERMINAL_REASONS, reason
@@ -100,6 +108,38 @@ async def run_agent(client, dispatcher, registry, system, user_message,
                 if ungrounded >= 2:
                     return stop("blocked", "answered twice without observing anything")
                 continue                       # hand it back and let the model correct
+
+            # TERMINATION GUARD. `<loop_rules>` says to end with finish, blocked or
+            # out_of_scope. Unenforced, that rule loses to a cheaper option: prose
+            # ends the run just as well and costs the model nothing.
+            #
+            # The evidence that this is an incentive problem and not a capability
+            # one: across six runs under two different sets of tool descriptions,
+            # `finish` was never called once and `evidence` was 0 on every task -
+            # and on T3 the model wrote the word "Blocked" IN PROSE, having reached
+            # exactly the right judgement, then did not spend a call saying it.
+            # The judgement was there. The reason to use the tool was not.
+            #
+            # So the free exit is closed and the model is handed its own output
+            # back. require_terminal_tool=False restores the old behaviour, which
+            # is what the earlier runs measured and what the comparison needs.
+            if require_terminal_tool:
+                unterminated += 1
+                obs = obs_err("no_terminal_tool",
+                              "a run ends through a tool, not through prose",
+                              "Call finish(answer, evidence_url) if a tool result "
+                              "holds the answer, blocked(question) if nothing here "
+                              "can give it, or out_of_scope(reason) if this is not "
+                              "your job.")
+                transcript.append({"role": "tool", "name": "termination_check",
+                                   "content": obs})
+                trace.append({"step": step, "tool": None, "args": {}, "thought": "",
+                              "tier": None, "obs": obs, "tokens": tokens,
+                              "latency_ms": int((time.time() - t0) * 1000)})
+                if unterminated >= 2:
+                    return stop("unterminated", "wrote prose twice instead of "
+                                                "calling a terminal tool")
+                continue                   # hand it back and let the model correct
 
             transcript.append({"role": "assistant", "content": reply.text})
             trace.append({"step": step, "tool": None, "args": {}, "thought": "",
