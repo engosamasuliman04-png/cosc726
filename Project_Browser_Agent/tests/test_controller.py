@@ -1,12 +1,13 @@
 """Stop reasons, the grounding guard, and derived fields.
 
-Every exit from run_agent names a stop reason. `capped` is a legitimate outcome,
-not a crash.
+Every exit from run_agent names a stop reason, and a cap is a legitimate outcome,
+not a crash. The four cap endings carry four different names because they are
+four different failures.
 """
 
 import pytest
 
-from browser_agent import SYSTEM, build_agent, run_agent
+from browser_agent import SYSTEM, build_agent, is_capped, run_agent
 from browser_agent.clients import HeuristicClient, ScriptedClient
 from browser_agent.fakes import ALLOW, FakePage, R
 
@@ -38,14 +39,49 @@ async def test_pending_approval_changes_nothing():
     assert res.stop_reason == "pending_approval"
     assert res.transcript[-1]["content"]["state_changed"] is False
 
-@pytest.mark.parametrize("label,script,kw", [
-    ("turn cap",      [R("read_page", {}), R("list_links", {})] * 2, {"max_steps": 3}),
-    ("token ceiling", [R("read_page", {}, p=9000, c=2000)] * 4, {"token_budget": 15000}),
-    ("no progress",   [R("read_page", {})] * 4, {}),
+@pytest.mark.parametrize("expected,script,kw", [
+    ("capped_steps",  [R("read_page", {}), R("list_links", {})] * 2, {"max_steps": 3}),
+    ("capped_tokens", [R("read_page", {}, p=9000, c=2000)] * 4, {"token_budget": 15000}),
+    ("no_progress",   [R("read_page", {})] * 4, {}),
 ])
-async def test_capped(label, script, kw):
+async def test_each_cap_names_its_own_mechanism(expected, script, kw):
+    """One name for four endings hid which one happened; these assert the name,
+    not just the family. A test asserting only `is_capped` would still pass if
+    the four collapsed back into one, which is the regression worth catching."""
     res = await run(script, **kw)
-    assert res.stop_reason == "capped", label
+    assert res.stop_reason == expected
+    assert is_capped(res.stop_reason)
+
+async def test_the_two_complete_paths_are_distinguishable_from_the_trace():
+    """Both exits report `complete`, so the stop reason alone cannot tell a run
+    that called finish from one that merely stopped emitting calls. evaluate.py
+    scores them differently, so the trace MUST carry the difference - and it does,
+    in `tool`: the control tool names itself, the fall-through leaves it None.
+
+    Written after a first attempt keyed on obs["terminal"], which the fall-through
+    exit also sets: the check reported "ended via a tool" for precisely the runs
+    it existed to catch."""
+    via_tool = await run([R("read_page", {}),
+                          R("finish", {"answer": "x",
+                                       "evidence_url": "https://example.com/"})])
+    fell_through = await run([R("read_page", {}), R(t="the heading is Example Domain")])
+
+    assert via_tool.stop_reason == fell_through.stop_reason == "complete"
+
+    def ended_by(res):
+        t = next(t for t in res.trace if t["obs"].get("terminal"))
+        return t["tool"], t["tier"]
+
+    assert ended_by(via_tool) == ("finish", "control")
+    assert ended_by(fell_through) == (None, None)
+    assert len(via_tool.evidence) == 1 and len(fell_through.evidence) == 0
+
+async def test_no_progress_undercounts_steps_by_one():
+    """The no-progress exit returns before appending, so the repeated call is
+    never traced. Documented because a run showing steps=1 actually made two
+    calls - the gap that made an earlier failure unreadable."""
+    res = await run([R("read_page", {})] * 4)
+    assert res.stop_reason == "no_progress" and res.steps_used == 1
 
 # ------------------------------------------------------- the grounding guard
 async def test_ungrounded_answer_is_refused():

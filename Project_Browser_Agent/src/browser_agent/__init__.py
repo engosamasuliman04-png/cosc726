@@ -8,6 +8,7 @@
 from .tiers import (
     Tier, NoArgs, OpenUrlArgs, ClickLinkArgs, SubmitFormArgs,
     FinishArgs, BlockedArgs, OutOfScopeArgs, TERMINAL_REASONS,
+    CAP_REASONS, is_capped,
 )
 from .tools import BrowserTools, obs_err
 from .registry import ToolSpec, ToolCall, build_registry
@@ -21,6 +22,7 @@ from .controller import RunResult, run_agent, report, build_agent
 __all__ = [
     "Tier", "NoArgs", "OpenUrlArgs", "ClickLinkArgs", "SubmitFormArgs",
     "FinishArgs", "BlockedArgs", "OutOfScopeArgs", "TERMINAL_REASONS",
+    "CAP_REASONS", "is_capped",
     "BrowserTools", "obs_err",
     "ToolSpec", "ToolCall", "build_registry",
     "Dispatcher", "GateError",

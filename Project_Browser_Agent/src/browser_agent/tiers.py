@@ -18,7 +18,20 @@ class Tier(str, Enum):
     CONSEQUENTIAL = "consequential"
     CONTROL = "control"        # ends the run; never touches the world
 
-TERMINAL_REASONS = {"complete", "blocked", "out_of_scope", "pending_approval", "capped"}
+# A stop reason that aggregates unlike mechanisms is not a stop reason.
+# `capped` used to cover four different endings - a spent token budget, a blown
+# deadline, a repeated call, and an exhausted turn cap - so a failed run said
+# "capped" and left you to infer WHICH from step counts and clocks. The four are
+# named separately now; CAP_REASONS keeps "did it cap at all?" askable in one go.
+CAP_REASONS = {"capped_steps", "capped_tokens", "capped_time", "no_progress"}
+
+TERMINAL_REASONS = ({"complete", "blocked", "out_of_scope", "pending_approval"}
+                    | CAP_REASONS)
+
+
+def is_capped(reason: str) -> bool:
+    """True for any of the four cap endings. Use instead of `== "capped"`."""
+    return reason in CAP_REASONS
 
 class NoArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")

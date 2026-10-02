@@ -1,9 +1,17 @@
 """The loop. Its only job: when do we stop?
 
 Every exit names a stop reason, enforced by `assert`:
-  complete | blocked | pending_approval | out_of_scope | capped
+  complete | blocked | pending_approval | out_of_scope
+  capped_steps | capped_tokens | capped_time | no_progress
 
-`capped` is a legitimate outcome, not a crash — it leaves through the same
+The last four were a single reason, `capped`, until a run showed why that was
+wrong: two failing tasks both reported `capped` and had nothing in common. One
+stalled inside a single long call and was cut off by the deadline; the other
+repeated an identical call. Neither came near the turn cap they were assumed to
+have hit. A name covering four mechanisms cannot be read, so each exit now names
+its own; `is_capped` in tiers.py asks the family question in one go.
+
+A cap is a legitimate outcome, not a crash — it leaves through the same
 reporting path as everything else.
 
 Terminal tools return their own reason in `obs["terminal"]`, so the loop never
@@ -66,9 +74,12 @@ async def run_agent(client, dispatcher, registry, system, user_message,
         spent = sum(t["tokens"] for t in trace) + tokens
 
         if spent > token_budget:
-            return stop("capped", f"token budget {token_budget} exceeded")
+            return stop("capped_tokens", f"token budget {token_budget} exceeded")
         if time.time() - started > deadline_s:
-            return stop("capped", f"wall clock {deadline_s}s exceeded")
+            # Checked only AFTER complete() returns, so this fires on the return
+            # of a long call, not during it: elapsed can exceed deadline_s by a
+            # whole call. A task that ends here stalled; it did not loop.
+            return stop("capped_time", f"wall clock {deadline_s}s exceeded")
 
         if reply.tool_call is None:
             # GROUNDING GUARD. The prompt says "never state a fact no tool result has
@@ -101,7 +112,9 @@ async def run_agent(client, dispatcher, registry, system, user_message,
         call = reply.tool_call
         sig = (call.name, json.dumps(call.args, sort_keys=True))
         if sig == last_sig:
-            return stop("capped", f"no progress: {call.name} repeated identically")
+            # Returns BEFORE appending, so steps_used is one short of the calls
+            # made - a run ending here with steps=1 made two identical calls.
+            return stop("no_progress", f"{call.name} repeated identically")
         last_sig = sig
 
         transcript.append({"role": "assistant",
@@ -118,7 +131,7 @@ async def run_agent(client, dispatcher, registry, system, user_message,
         if obs.get("terminal"):
             return stop(obs["terminal"], obs.get("detail", ""))
 
-    return stop("capped", f"turn cap {max_steps} reached")
+    return stop("capped_steps", f"turn cap {max_steps} reached")
 
 
 def report(res: RunResult):
