@@ -35,7 +35,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .clients import Reply, Usage
+from .clients import Reply, Usage, goal_coverage
 from .dispatcher import Dispatcher
 from .registry import ToolCall, build_registry
 from .tiers import TERMINAL_REASONS, FinishArgs, Tier
@@ -174,6 +174,31 @@ async def run_agent(client, dispatcher, registry, system, user_message,
     return stop("capped_steps", f"turn cap {max_steps} reached")
 
 
+def answer_support(res: RunResult):
+    """How much of the answer appears in what the tools actually returned.
+
+    The grounding guard asks whether the agent observed ANYTHING; it does not ask
+    whether the answer it then gave is in what it observed. Run F showed the
+    difference: with `blocked` unavailable, the agent answered "example.com is
+    available for registration" - a sentence that appears in no tool result -
+    and attached a valid evidence_url to it. Every existing check passed it.
+
+    Returns a fraction, or None when the run produced no answer. Deliberately NOT
+    wired into a refusal yet: a threshold picked before seeing the distribution
+    is the same guess that produced three wrong findings already. Measure the
+    scores for answers known to be true and for the one known to be invented,
+    then choose. `goal_coverage` is reused rather than reinvented so the notion
+    of "a content word" stays single-sourced.
+    """
+    answer = next((t["obs"]["detail"] for t in res.trace
+                   if t["obs"].get("terminal") == "complete"), None)
+    if not answer:
+        return None
+    seen = " ".join(json.dumps(t["obs"], ensure_ascii=False) for t in res.trace
+                    if t["tier"] == "read" and t["obs"].get("ok"))
+    return round(goal_coverage(answer, seen), 3)
+
+
 def report(res: RunResult):
     print(f"RUN {res.run_id} | STOP = {res.stop_reason.upper()}")
     print(f"detail : {res.detail[:100]}")
@@ -192,7 +217,9 @@ def report(res: RunResult):
         print("EVIDENCE:", e["url"], "\nANSWER  :", e["answer"][:200])
 
 
-def build_agent(page, allowed_domains, allow_consequential=False):
+def build_agent(page, allowed_domains, allow_consequential=False,
+                require_quote=False):
     tools = BrowserTools(page, allowed_domains)
     registry = build_registry(tools)
-    return tools, registry, Dispatcher(tools, registry, allow_consequential)
+    return tools, registry, Dispatcher(tools, registry, allow_consequential,
+                                       require_quote)

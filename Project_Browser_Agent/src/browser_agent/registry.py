@@ -57,8 +57,9 @@ def build_registry(tools: BrowserTools) -> dict[str, ToolSpec]:
         # trigger is readable from the goal itself while the other two are not.
         # These say WHEN, in the goal's own vocabulary. Nothing else changed.
         "finish":       ToolSpec(t_finish, Tier.CONTROL, FinishArgs,
-            "Use as soon as a tool result contains the answer. Pass that answer and "
-            "the URL of the page the result came from."),
+            "Use as soon as a tool result contains the answer. Pass the answer, the "
+            "URL it came from, and evidence_quote: the exact words from the page "
+            "that support it, copied not paraphrased."),
         # EXPERIMENT D. B's descriptions said WHEN, and behaviour moved: T4 went
         # from repeating itself to selecting a control tool. It selected the wrong
         # one. `blocked` read "something no public page can tell you", which is

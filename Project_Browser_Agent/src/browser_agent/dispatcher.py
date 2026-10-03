@@ -25,10 +25,12 @@ class GateError(Exception):
 
 
 class Dispatcher:
-    def __init__(self, tools, registry, allow_consequential=False):
+    def __init__(self, tools, registry, allow_consequential=False,
+                 require_quote=False):
         self.t = tools
         self.registry = registry
         self.allow_consequential = allow_consequential
+        self.require_quote = require_quote
 
     def _refers(self, name, args):
         if name == "click_link":
@@ -39,6 +41,25 @@ class Dispatcher:
             if args["index"] >= len(links):
                 raise GateError("index_out_of_range",
                                 f"index {args['index']} but this page has {len(links)} links")
+        if name == "finish" and self.require_quote:
+            # GATE 3 for an ANSWER. "Refers to something that exists" has meant
+            # a link index or an allowlisted domain; a cited fact is the same
+            # kind of claim and was never checked. Run F: the agent answered
+            # "example.com is available for registration", a sentence present in
+            # no tool result, and passed the grounding guard, the termination
+            # guard, the schema and the evidence count.
+            #
+            # Substring, not similarity: an exact quote needs no threshold, and
+            # a page that was never shown cannot be quoted from.
+            q = BrowserTools._flat(args.get("evidence_quote", ""))
+            if not q:
+                raise GateError("quote_missing",
+                                "finish needs evidence_quote: the words from the "
+                                "page that support this answer")
+            if q not in self.t.seen_text():
+                raise GateError("quote_not_observed",
+                                f"no tool result contains {args['evidence_quote'][:60]!r}; "
+                                "quote the page exactly, do not paraphrase")
         if name == "open_url":
             d = BrowserTools.domain(args["url"])
             if not any(d == a or d.endswith("." + a) for a in self.t.allowed_domains):

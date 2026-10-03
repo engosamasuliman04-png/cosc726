@@ -18,7 +18,7 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 
 from browser_agent import config
-from browser_agent import SYSTEM, Tier, build_agent, run_agent
+from browser_agent import SYSTEM, Tier, answer_support, build_agent, run_agent
 from browser_agent.clients import HeuristicClient
 from browser_agent.ollama_client import HttpTransport, OllamaBackend, OllamaClient
 
@@ -96,6 +96,18 @@ async def main():
                     help="remove a tool from the registry (repeatable). The prompt "
                          "still lists it, so a call to it is refused as unknown_tool "
                          "rather than silently unavailable.")
+    # Most experiments turn on ONE task. Running the other three to see T3 costs
+    # four times the wall clock and tempts you to skip the repeat runs that F0
+    # says are necessary. Matching is a case-insensitive substring of the label,
+    # so `--only T3` and `--only "out of remit"` both work.
+    ap.add_argument("--only", action="append", default=[], metavar="LABEL",
+                    help="run only tasks whose label contains this (repeatable). "
+                         "A run filtered this way is comparable only to another "
+                         "run of the same tasks.")
+    ap.add_argument("--require-quote", action="store_true",
+                    help="finish must carry evidence_quote, and the quote must "
+                         "appear verbatim in a tool result. Off by default so the "
+                         "before/after comparison has a before.")
     ap.add_argument("--allow-prose-exit", action="store_true",
                     help="restore the free exit: accept grounded prose as complete, "
                          "without a terminal tool call. Reproduces the runs taken "
@@ -124,15 +136,22 @@ async def main():
         except Exception as e:
             raise SystemExit(f"warm-up failed: {e}")
 
+    tasks = [t for t in TASKS
+             if not args.only or any(o.lower() in t[0].lower() for o in args.only)]
+    if not tasks:
+        raise SystemExit(f"--only {args.only} matched nothing. "
+                         f"Labels: {[t[0] for t in TASKS]}")
+
     rows = []
-    for label, goal, expected in TASKS:
+    for label, goal, expected in tasks:
         print(f"[{label}] running...", flush=True)
         client = make_client(args.client, args.model, goal, args.timeout)
         async with async_playwright() as p:
             b = await p.chromium.launch(headless=True)
             pg = await b.new_page()
             await pg.goto("https://example.com")
-            _, reg, disp = build_agent(pg, ALLOW)
+            _, reg, disp = build_agent(pg, ALLOW,
+                                       require_quote=args.require_quote)
             for name in args.drop_tool:      # the dispatcher shares this dict
                 if reg.pop(name, None) is None:
                     raise SystemExit(f"--drop-tool {name}: not in the registry "
@@ -170,14 +189,30 @@ async def main():
                        and (r.stop_reason != "complete" or len(r.evidence) > 0)),
             "via_tool": terminal_by_tool,                  # a CONTROL tool ended it
             "ended_by": ended_by or "-",                   # WHICH one, or "-" for fall-through
-            "evidence": len(r.evidence),                   # ACCURACY (grounding)
+            "evidence": len(r.evidence),                   # ACCURACY (a citation EXISTS)
+            # ... and how much of the answer is actually IN what was observed.
+            # `evidence` counts citations; it cannot tell a cited fact from a
+            # cited fabrication. Recorded, not enforced, until the spread between
+            # true and invented answers is known.
+            "support": answer_support(r),
+            "answer": next((t["obs"]["detail"][:300] for t in r.trace
+                            if t["obs"].get("terminal") == "complete"), ""),
             "gate_refusals": sum(1 for t in r.trace if t["obs"].get("error")),  # ROBUSTNESS
             # The COUNT without the NAMES is the `capped` mistake again. A run
             # reporting "2 refusals" says nothing about whether the model sent a
             # malformed call, broke a schema, or was stopped by a tier rule - and
             # those need different fixes. One of these lists is why `finish` was
             # refused in one harness and accepted in another.
-            "errors": [t["obs"]["error"] for t in r.trace if t["obs"].get("error")],
+            # WHICH tool, WHICH error, and - for a schema violation - WHICH field.
+            # `schema_violation` alone was the `capped` mistake one level down: it
+            # says a call was malformed without saying what the model got wrong,
+            # and the fix for a bad evidence_url is nothing like the fix for a bad
+            # index. The dispatcher already puts "field: message" in `detail`;
+            # it was simply being thrown away here.
+            "errors": [f"{t['tool'] or '-'}:{t['obs']['error']}"
+                       + (f" [{t['obs']['detail'][:70]}]"
+                          if t["obs"].get("detail") else "")
+                       for t in r.trace if t["obs"].get("error")],
             "steps": r.steps_used, "tokens": r.tokens_used, # EFFICIENCY
             "secs": round(secs, 1),
             "parse_failures": getattr(client, "parse_failures", 0),
@@ -186,7 +221,7 @@ async def main():
     # `ended_by` is printed instead of the boolean `via_tool`: a name says which
     # tool ended the run, and "-" says none did. The boolean is kept in the JSON.
     cols = ["task", "expected", "got", "correct", "strict", "ended_by",
-            "evidence", "gate_refusals", "steps", "tokens", "secs"]
+            "evidence", "support", "gate_refusals", "steps", "tokens", "secs"]
     print(" | ".join(f"{c:>13}" for c in cols))
     print("-" * (16 * len(cols)))
     for r in rows:
@@ -196,8 +231,11 @@ async def main():
     for r in rows:                      # the cap path, named - no more inferring
         if not r["correct"]:
             print(f"  {r['task']:<18} {r['got']:<14} {r['detail']}")
-        if r["errors"]:
-            print(f"  {r['task']:<18} {'refused':<14} {' -> '.join(r['errors'])}")
+        for e in r["errors"]:
+            print(f"  {r['task']:<18} {'refused':<14} {e}")
+        if r["answer"]:
+            print(f"  {r['task']:<18} {'support ' + str(r['support']):<14} "
+                  f"{r['answer'][:90]}")
 
     n, strict = sum(r["correct"] for r in rows), sum(r["strict"] for r in rows)
     print(f"\ncompletion (loose) : {n}/{len(rows)}   "
@@ -223,7 +261,9 @@ async def main():
                       "max_steps": 8, "tools": 8 - len(args.drop_tool),
                       "dropped_tools": args.drop_tool,
                       "require_terminal_tool": not args.allow_prose_exit,
-                      "warmed": not args.no_warm},
+                      "warmed": not args.no_warm,
+                      "require_quote": args.require_quote,
+                      "tasks": [t[0] for t in tasks]},
          "rows": rows}, indent=2))
     print(f"\nwritten: {args.out}")
 

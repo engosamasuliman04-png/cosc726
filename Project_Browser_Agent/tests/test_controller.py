@@ -108,6 +108,40 @@ async def test_model_can_correct_itself():
     assert res.trace[0]["obs"]["error"] == "ungrounded_answer"
     assert len(res.evidence) == 1
 
+# --------------------------------------------------- the verification gate
+async def quoting(answer, quote):
+    _, reg, disp = build_agent(FakePage("https://example.com/"), ALLOW,
+                               require_quote=True)
+    return await run_agent(ScriptedClient([
+        R("read_page", {}),
+        R("finish", {"answer": answer, "evidence_url": "https://example.com/",
+                     "evidence_quote": quote})]), disp, reg, SYSTEM, "q")
+
+async def test_an_invented_quote_is_refused():
+    """Run F's fabrication, reproduced: an answer that appears in no tool result,
+    with a quote invented to match it. Lexical overlap was measured first and
+    could not separate this from a true answer - it scored 0.0 for both - so the
+    check is an exact substring instead, which needs no threshold."""
+    res = await quoting("example.com is available for registration.",
+                        "example.com is available for registration")
+    assert res.trace[1]["obs"]["error"] == "quote_not_observed"
+
+async def test_a_copied_quote_passes_including_whitespace_and_case():
+    """A quote is matched against the TEXT, not its layout; a model that copies
+    correctly but spaces differently is not punished for it."""
+    for q in ["Example Domain", "  example   DOMAIN "]:
+        res = await quoting("The heading is Example Domain.", q)
+        assert res.stop_reason == "complete" and len(res.evidence) == 1
+
+async def test_the_gate_checks_existence_not_support():
+    """The limit, asserted so it is not mistaken for something stronger: a REAL
+    quote pasted beside a FALSE claim still passes. This gate raises the cost of
+    inventing - the words must have been shown - but it does not read the answer
+    against the quote. That needs a judge, and is not built."""
+    res = await quoting("example.com is available for registration.",
+                        "This domain is for use")
+    assert res.stop_reason == "complete"
+
 # -------------------------------------------------- the termination guard
 async def test_grounded_plain_answer_completes_only_when_prose_is_allowed():
     """Grounded prose used to be accepted as `complete`. That was the free exit:
