@@ -70,9 +70,18 @@ class Dispatcher:
         if spec.tier is Tier.CONSEQUENTIAL and not self.allow_consequential:
             raise GateError("requires_human_approval",
                             f"{name} is CONSEQUENTIAL; this agent may only propose")
-        if name == "click_link" and not self.t.read_here():
+        # EVERY write-tier call, not just click_link. The prompt has always said
+        # to read a new page first; this gate has guarded one of the two WRITE
+        # tools since it was written, and the first real-model run walked straight
+        # through the gap by calling open_url on an unread page. run_agent.py's
+        # docstring listed `write_before_read` as the expected outcome of exactly
+        # that run - an error the dispatcher could not produce for it.
+        #
+        # `open_url` away from an unread page is the same mistake as clicking from
+        # one: the agent is acting on a page it has not looked at.
+        if spec.tier is Tier.WRITE and not self.t.read_here():
             raise GateError("write_before_read",
-                            "the current page has not been observed yet")
+                            f"{name}: the current page has not been observed yet")
 
     async def dispatch(self, call: ToolCall):
         if not isinstance(call.name, str) or not isinstance(call.args, dict):

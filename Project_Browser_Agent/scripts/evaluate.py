@@ -19,6 +19,7 @@ from playwright.async_api import async_playwright
 
 from browser_agent import config
 from browser_agent import SYSTEM, Tier, answer_support, build_agent, run_agent
+from browser_agent.clients import goal_coverage
 from browser_agent.clients import HeuristicClient
 from browser_agent.ollama_client import HttpTransport, OllamaBackend, OllamaClient
 
@@ -104,6 +105,14 @@ async def main():
                     help="run only tasks whose label contains this (repeatable). "
                          "A run filtered this way is comparable only to another "
                          "run of the same tasks.")
+    # F0: the same code, the same model and the same limits gave T1 three
+    # different outcomes. Every number this harness has produced so far is a
+    # single observation. Repeats do not remove the variance - they make it
+    # visible, which is the most that can honestly be claimed.
+    ap.add_argument("--repeat", type=int, default=1, metavar="N",
+                    help="run each task N times and report the distinct outcomes. "
+                         "A task that answers differently across repeats is not "
+                         "evidence of anything a single run could show.")
     ap.add_argument("--require-quote", action="store_true",
                     help="finish must carry evidence_quote, and the quote must "
                          "appear verbatim in a tool result. Off by default so the "
@@ -143,8 +152,10 @@ async def main():
                          f"Labels: {[t[0] for t in TASKS]}")
 
     rows = []
-    for label, goal, expected in tasks:
-        print(f"[{label}] running...", flush=True)
+    for rep in range(1, args.repeat + 1):
+      for label, goal, expected in tasks:
+        tag = f"{label} #{rep}" if args.repeat > 1 else label
+        print(f"[{tag}] running...", flush=True)
         client = make_client(args.client, args.model, goal, args.timeout)
         async with async_playwright() as p:
             b = await p.chromium.launch(headless=True)
@@ -180,7 +191,7 @@ async def main():
         ended_by = ended["tool"] if ended else None
         terminal_by_tool = bool(ended and ended["tier"] == Tier.CONTROL.value)
         rows.append({
-            "task": label, "goal": goal,
+            "task": label, "rep": rep, "goal": goal,
             "expected": expected, "got": r.stop_reason,
             "detail": r.detail,                            # WHICH cap, verbatim
             "correct": r.stop_reason == expected,          # TASK COMPLETION (loose)
@@ -195,6 +206,14 @@ async def main():
             # cited fabrication. Recorded, not enforced, until the spread between
             # true and invented answers is known.
             "support": answer_support(r),
+            # How much of the GOAL the answer touches. T1 answered "1 link" to a
+            # question with two halves and still scored strict=True, because
+            # `strict` checks how a run ended, not whether it answered. Recorded,
+            # not enforced: a completeness threshold built on word overlap would
+            # repeat the mistake `support` was kept out of the gate for.
+            "goal_cov": round(goal_coverage(goal, next(
+                (t["obs"]["detail"] for t in r.trace
+                 if t["obs"].get("terminal") == "complete"), "")), 3),
             "answer": next((t["obs"]["detail"][:300] for t in r.trace
                             if t["obs"].get("terminal") == "complete"), ""),
             "gate_refusals": sum(1 for t in r.trace if t["obs"].get("error")),  # ROBUSTNESS
@@ -221,7 +240,10 @@ async def main():
     # `ended_by` is printed instead of the boolean `via_tool`: a name says which
     # tool ended the run, and "-" says none did. The boolean is kept in the JSON.
     cols = ["task", "expected", "got", "correct", "strict", "ended_by",
-            "evidence", "support", "gate_refusals", "steps", "tokens", "secs"]
+            "evidence", "support", "goal_cov", "gate_refusals", "steps",
+            "tokens", "secs"]
+    if args.repeat > 1:
+        cols.insert(1, "rep")
     print(" | ".join(f"{c:>13}" for c in cols))
     print("-" * (16 * len(cols)))
     for r in rows:
@@ -242,6 +264,16 @@ async def main():
           f"stop reason matched expected")
     print(f"completion (strict): {strict}/{len(rows)}   "
           f"... and ended through a control tool, with evidence where it claims an answer")
+    if args.repeat > 1:
+        # The spread IS the result. A task with one outcome across N repeats can
+        # carry a claim; a task with three cannot, however good the best one looks.
+        print()
+        for label in [t[0] for t in tasks]:
+            got = [r["got"] for r in rows if r["task"] == label]
+            uniq = sorted(set(got))
+            flag = "stable" if len(uniq) == 1 else f"UNSTABLE ({len(uniq)} outcomes)"
+            print(f"  {label:<18} {flag:<22} {', '.join(got)}")
+
     via = sum(r["via_tool"] for r in rows)
     print(f"ended via control tool: {via}/{len(rows)}   "
           f"finish / blocked / out_of_scope - 3 of the 8 registered tools exist "
@@ -263,7 +295,8 @@ async def main():
                       "require_terminal_tool": not args.allow_prose_exit,
                       "warmed": not args.no_warm,
                       "require_quote": args.require_quote,
-                      "tasks": [t[0] for t in tasks]},
+                      "tasks": [t[0] for t in tasks],
+                      "repeat": args.repeat},
          "rows": rows}, indent=2))
     print(f"\nwritten: {args.out}")
 
