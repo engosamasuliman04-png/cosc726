@@ -53,6 +53,13 @@ class FinishArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
     answer: str = Field(min_length=1, max_length=1000)
     evidence_url: str = Field(pattern=r"^https://[^\s]+$")
+    # Declared here, enforced in the dispatcher (`require_quote`), because whether
+    # a quote is MANDATORY is a policy and whether it MATCHES needs the observed
+    # text - neither belongs in a static schema. Lexical overlap between an answer
+    # and the page was measured first and could not tell a true answer from an
+    # invented one: it scored 0.0 for both. An exact substring can be checked
+    # without a threshold, and cannot be produced for something never shown.
+    evidence_quote: str = Field(default="", max_length=300)
 
 class BlockedArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")

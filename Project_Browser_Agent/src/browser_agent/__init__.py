@@ -17,7 +17,9 @@ from .prompt import SYSTEM
 from .clients import (
     Usage, Reply, ScriptedClient, HeuristicClient, keywords, goal_coverage,
 )
-from .controller import RunResult, run_agent, report, build_agent
+from .controller import (
+    RunResult, run_agent, report, build_agent, answer_support,
+)
 
 __all__ = [
     "Tier", "NoArgs", "OpenUrlArgs", "ClickLinkArgs", "SubmitFormArgs",
@@ -28,5 +30,5 @@ __all__ = [
     "Dispatcher", "GateError",
     "SYSTEM",
     "Usage", "Reply", "ScriptedClient", "HeuristicClient", "keywords", "goal_coverage",
-    "RunResult", "run_agent", "report", "build_agent",
+    "RunResult", "run_agent", "report", "build_agent", "answer_support",
 ]

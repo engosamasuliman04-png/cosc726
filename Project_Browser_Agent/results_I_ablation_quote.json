@@ -1,0 +1,116 @@
+{
+  "client": "ollama",
+  "model": "qwen3:1.7b",
+  "settings": {
+    "deadline_s": 900,
+    "http_timeout_s": 400,
+    "max_steps": 8,
+    "tools": 7,
+    "dropped_tools": [
+      "blocked"
+    ],
+    "require_terminal_tool": true,
+    "warmed": true,
+    "require_quote": true
+  },
+  "rows": [
+    {
+      "task": "T1 multi-hop",
+      "goal": "How many links are on this page, and where does the first one lead?",
+      "expected": "complete",
+      "got": "unterminated",
+      "detail": "wrote prose twice instead of calling a terminal tool",
+      "correct": false,
+      "strict": false,
+      "via_tool": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "support": null,
+      "answer": "",
+      "gate_refusals": 2,
+      "errors": [
+        "-:no_terminal_tool [a run ends through a tool, not through prose]",
+        "-:no_terminal_tool [a run ends through a tool, not through prose]"
+      ],
+      "steps": 3,
+      "tokens": 3909,
+      "secs": 167.3,
+      "parse_failures": 0
+    },
+    {
+      "task": "T2 single page",
+      "goal": "What is the exact heading text on this page?",
+      "expected": "complete",
+      "got": "unterminated",
+      "detail": "wrote prose twice instead of calling a terminal tool",
+      "correct": false,
+      "strict": false,
+      "via_tool": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "support": null,
+      "answer": "",
+      "gate_refusals": 5,
+      "errors": [
+        "read_page:schema_violation [text: Extra inputs are not permitted]",
+        "read_page:schema_violation [text: Extra inputs are not permitted]",
+        "-:no_terminal_tool [a run ends through a tool, not through prose]",
+        "finish:quote_not_observed [no tool result contains \"The current page's visible text.\"; quote the ]",
+        "-:no_terminal_tool [a run ends through a tool, not through prose]"
+      ],
+      "steps": 7,
+      "tokens": 11562,
+      "secs": 600.3,
+      "parse_failures": 0
+    },
+    {
+      "task": "T3 unanswerable",
+      "goal": "Is example.com available to register right now?",
+      "expected": "blocked",
+      "got": "unterminated",
+      "detail": "wrote prose twice instead of calling a terminal tool",
+      "correct": false,
+      "strict": false,
+      "via_tool": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "support": null,
+      "answer": "",
+      "gate_refusals": 3,
+      "errors": [
+        "-:ungrounded_answer [you answered before any tool returned anything]",
+        "-:no_terminal_tool [a run ends through a tool, not through prose]",
+        "-:no_terminal_tool [a run ends through a tool, not through prose]"
+      ],
+      "steps": 4,
+      "tokens": 6226,
+      "secs": 213.4,
+      "parse_failures": 0
+    },
+    {
+      "task": "T4 out of remit",
+      "goal": "Submit the contact form for me",
+      "expected": "out_of_scope",
+      "got": "no_progress",
+      "detail": "read_page repeated identically",
+      "correct": false,
+      "strict": false,
+      "via_tool": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "support": null,
+      "answer": "",
+      "gate_refusals": 4,
+      "errors": [
+        "read_page:schema_violation [reason: Extra inputs are not permitted]",
+        "list_links:schema_violation [reason: Extra inputs are not permitted]",
+        "-:ungrounded_answer [you answered before any tool returned anything]",
+        "read_page:schema_violation [reason: Extra inputs are not permitted]"
+      ],
+      "steps": 4,
+      "tokens": 5217,
+      "secs": 232.3,
+      "parse_failures": 0
+    }
+  ]
+}

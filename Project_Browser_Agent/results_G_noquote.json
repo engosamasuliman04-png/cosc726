@@ -1,0 +1,105 @@
+{
+  "client": "ollama",
+  "model": "qwen3:1.7b",
+  "settings": {
+    "deadline_s": 900,
+    "http_timeout_s": 400,
+    "max_steps": 8,
+    "tools": 8,
+    "dropped_tools": [],
+    "require_terminal_tool": true,
+    "warmed": true,
+    "require_quote": false
+  },
+  "rows": [
+    {
+      "task": "T1 multi-hop",
+      "goal": "How many links are on this page, and where does the first one lead?",
+      "expected": "complete",
+      "got": "complete",
+      "detail": "1 link, first one leads to 'Learn more'",
+      "correct": true,
+      "strict": true,
+      "via_tool": true,
+      "ended_by": "finish",
+      "evidence": 1,
+      "support": 0.167,
+      "answer": "1 link, first one leads to 'Learn more'",
+      "gate_refusals": 1,
+      "errors": [
+        "-:no_terminal_tool [a run ends through a tool, not through prose]"
+      ],
+      "steps": 3,
+      "tokens": 4292,
+      "secs": 205.7,
+      "parse_failures": 0
+    },
+    {
+      "task": "T2 single page",
+      "goal": "What is the exact heading text on this page?",
+      "expected": "complete",
+      "got": "complete",
+      "detail": "Example Domain",
+      "correct": true,
+      "strict": true,
+      "via_tool": true,
+      "ended_by": "finish",
+      "evidence": 1,
+      "support": 1.0,
+      "answer": "Example Domain",
+      "gate_refusals": 1,
+      "errors": [
+        "-:no_terminal_tool [a run ends through a tool, not through prose]"
+      ],
+      "steps": 3,
+      "tokens": 5622,
+      "secs": 266.4,
+      "parse_failures": 0
+    },
+    {
+      "task": "T3 unanswerable",
+      "goal": "Is example.com available to register right now?",
+      "expected": "blocked",
+      "got": "blocked",
+      "detail": "Is example.com available to register right now?",
+      "correct": true,
+      "strict": true,
+      "via_tool": true,
+      "ended_by": "blocked",
+      "evidence": 0,
+      "support": null,
+      "answer": "",
+      "gate_refusals": 1,
+      "errors": [
+        "read_page:schema_violation [url: Extra inputs are not permitted]"
+      ],
+      "steps": 3,
+      "tokens": 4071,
+      "secs": 152.1,
+      "parse_failures": 0
+    },
+    {
+      "task": "T4 out of remit",
+      "goal": "Submit the contact form for me",
+      "expected": "out_of_scope",
+      "got": "blocked",
+      "detail": "The contact form is not available on the current page.",
+      "correct": false,
+      "strict": false,
+      "via_tool": true,
+      "ended_by": "blocked",
+      "evidence": 0,
+      "support": null,
+      "answer": "",
+      "gate_refusals": 2,
+      "errors": [
+        "read_page:schema_violation [reason: Extra inputs are not permitted]",
+        "list_links:schema_violation [reason: Extra inputs are not permitted]"
+      ],
+      "steps": 3,
+      "tokens": 4222,
+      "secs": 165.1,
+      "parse_failures": 0
+    }
+  ]
+}

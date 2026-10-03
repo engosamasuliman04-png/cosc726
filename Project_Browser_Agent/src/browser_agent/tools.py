@@ -44,6 +44,26 @@ class BrowserTools:
         self.observed.setdefault(self.page.url, {}).update(kw)
 
     @staticmethod
+    def _flat(s: str) -> str:
+        """Case and whitespace folded. A quote must match the TEXT, not its layout."""
+        return " ".join(s.split()).lower()
+
+    def seen_text(self) -> str:
+        """Everything the READ tools have returned, across pages, as one string.
+
+        This is what a quote is checked against. Link labels are included because
+        `list_links` is how the agent sees them - an answer about a link should be
+        able to cite the link's own text.
+        """
+        parts = []
+        for page in self.observed.values():
+            if page.get("text"):
+                parts.append(page["text"])
+            for link in page.get("links") or []:
+                parts.append(str(link.get("text", "")))
+        return self._flat(" ".join(parts))
+
+    @staticmethod
     def domain(url: str) -> str:
         return url.split("//", 1)[-1].split("/", 1)[0].lower()
 
@@ -51,7 +71,9 @@ class BrowserTools:
     async def read_page(self) -> dict:
         try:
             text = await self.page.locator("body").inner_text()
-            self._mark(read=True)
+            # The text is kept, not just the fact that a read happened. A quote
+            # can only be checked against what was actually returned.
+            self._mark(read=True, text=text[:MAX_TEXT])
             return {"ok": True, "url": self.page.url,
                     "title": await self.page.title(),
                     "text": text[:MAX_TEXT], "truncated": len(text) > MAX_TEXT,
@@ -104,9 +126,10 @@ class BrowserTools:
 
 # ---- CONTROL (registered like any other tool, so gate 2 runs once) ----
 
-async def t_finish(answer: str, evidence_url: str) -> dict:
+async def t_finish(answer: str, evidence_url: str, evidence_quote: str = "") -> dict:
     return {"ok": True, "terminal": "complete", "detail": answer,
-            "evidence_url": evidence_url, "state_changed": False}
+            "evidence_url": evidence_url, "evidence_quote": evidence_quote,
+            "state_changed": False}
 
 async def t_blocked(question: str) -> dict:
     return {"ok": True, "terminal": "blocked", "detail": question,
