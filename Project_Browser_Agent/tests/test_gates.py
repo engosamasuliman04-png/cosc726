@@ -64,6 +64,21 @@ async def test_gate4_consequential_needs_approval(agent):
     assert obs["error"] == "requires_human_approval"
     assert tier.value == "consequential"
 
+async def test_gate4_write_before_read_covers_open_url_too(agent):
+    """F1, closed. The rule existed in the prompt and the gate guarded click_link
+    only, so the first real-model run left an unread page via open_url and nothing
+    objected. Both WRITE tools are the same mistake: acting on a page never seen."""
+    tools, reg, disp = agent
+    obs, _ = await disp.dispatch(ToolCall("open_url", {"url": "https://iana.org/"}))
+    assert obs["error"] == "write_before_read"
+
+    # After a read the gate stands aside. What navigation then does is the
+    # browser's business, not this gate's - asserting on it would couple this
+    # test to the network.
+    await disp.dispatch(ToolCall("read_page", {}))
+    obs, _ = await disp.dispatch(ToolCall("open_url", {"url": "https://iana.org/"}))
+    assert obs.get("error") != "write_before_read"
+
 async def test_gate4_write_before_read(agent):
     tools, _, disp = agent
     await disp.dispatch(ToolCall("list_links", {}))
