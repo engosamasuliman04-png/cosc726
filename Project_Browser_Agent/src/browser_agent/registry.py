@@ -14,9 +14,9 @@ from pydantic import BaseModel
 
 from .tiers import (
     Tier, NoArgs, OpenUrlArgs, ClickLinkArgs, SubmitFormArgs,
-    FinishArgs, BlockedArgs, OutOfScopeArgs,
+    FinishArgs, BlockedArgs, OutOfScopeArgs, StopArgs, RefusalArgs,
 )
-from .tools import BrowserTools, t_finish, t_blocked, t_out_of_scope
+from .tools import BrowserTools, t_finish, t_blocked, t_out_of_scope, t_stop
 
 @dataclass
 class ToolSpec:
@@ -37,8 +37,16 @@ class ToolCall:
     thought: str = ""          # the ReAct "Thought", carried on the call itself
 
 
-def build_registry(tools: BrowserTools) -> dict[str, ToolSpec]:
-    return {
+def build_registry(tools: BrowserTools, stop_mode: str = "split") -> dict[str, ToolSpec]:
+    """How the run is allowed to end. All three shapes are kept, because each is
+    a measured condition and a comparison needs its alternatives.
+
+        split   finish / blocked / out_of_scope          out_of_scope never chosen
+        merged  stop(answered|need_info|not_my_job)      fixed T4, broke T1 and T2
+        hybrid  finish + stop(need_info|not_my_job)      the two results combined
+    """
+    assert stop_mode in ("split", "merged", "hybrid"), stop_mode
+    reg = {
         "read_page":    ToolSpec(tools.read_page, Tier.READ, NoArgs,
             "Read the visible text of the current page. Read-only. Call first on any new page."),
         "list_links":   ToolSpec(tools.list_links, Tier.READ, NoArgs,
@@ -79,3 +87,21 @@ def build_registry(tools: BrowserTools) -> dict[str, ToolSpec]:
             "Use when the goal asks you to DO something rather than find something "
             "out: shopping, signing in, posting, filling in or submitting a form."),
     }
+    if stop_mode == "merged":
+        for name in ("finish", "blocked", "out_of_scope"):
+            reg.pop(name)
+        reg["stop"] = ToolSpec(t_stop, Tier.CONTROL, StopArgs,
+            "End the run. reason_type: 'answered' when a tool result holds the "
+            "answer - then give evidence_url and evidence_quote copied from the "
+            "page; 'need_info' when no public page states what the goal asks; "
+            "'not_my_job' when the goal asks you to shop, sign in, post, or fill "
+            "in a form.")
+    elif stop_mode == "hybrid":
+        for name in ("blocked", "out_of_scope"):
+            reg.pop(name)
+        reg["stop"] = ToolSpec(t_stop, Tier.CONTROL, RefusalArgs,
+            "End the run WITHOUT answering. reason_type: 'need_info' when no "
+            "public page states what the goal asks; 'not_my_job' when the goal "
+            "asks you to shop, sign in, post, or fill in a form. To ANSWER, use "
+            "finish instead.")
+    return reg

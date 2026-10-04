@@ -131,6 +131,19 @@ async def t_finish(answer: str, evidence_url: str, evidence_quote: str = "") -> 
             "evidence_url": evidence_url, "evidence_quote": evidence_quote,
             "state_changed": False}
 
+_STOP_TERMINAL = {"answered": "complete",
+                  "need_info": "blocked",
+                  "not_my_job": "out_of_scope"}
+
+async def t_stop(reason_type, detail: str, evidence_url: str = "",
+                 evidence_quote: str = "") -> dict:
+    """One terminal tool. The reason it carries becomes the run's stop reason,
+    so the controller still never learns these names - the mapping lives here."""
+    rt = getattr(reason_type, "value", reason_type)
+    return {"ok": True, "terminal": _STOP_TERMINAL[rt], "detail": detail,
+            "evidence_url": evidence_url, "evidence_quote": evidence_quote,
+            "stop_reason_type": rt, "state_changed": False}
+
 async def t_blocked(question: str) -> dict:
     return {"ok": True, "terminal": "blocked", "detail": question,
             "state_changed": False}

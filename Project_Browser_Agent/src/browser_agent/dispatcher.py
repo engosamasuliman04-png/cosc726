@@ -10,8 +10,6 @@
 
 from __future__ import annotations
 
-import json
-
 from pydantic import ValidationError
 
 from .registry import ToolCall, ToolSpec
@@ -41,7 +39,11 @@ class Dispatcher:
             if args["index"] >= len(links):
                 raise GateError("index_out_of_range",
                                 f"index {args['index']} but this page has {len(links)} links")
-        if name == "finish" and self.require_quote:
+        # `stop` only claims an answer when reason_type is 'answered'; the other
+        # two reasons cite nothing by nature, so the quote rule cannot apply.
+        claims_answer = name == "finish" or (
+            name == "stop" and args.get("reason_type") == "answered")
+        if claims_answer and self.require_quote:
             # GATE 3 for an ANSWER. "Refers to something that exists" has meant
             # a link index or an allowlisted domain; a cited fact is the same
             # kind of claim and was never checked. Run F: the agent answered
@@ -83,6 +85,43 @@ class Dispatcher:
             raise GateError("write_before_read",
                             f"{name}: the current page has not been observed yet")
 
+    @staticmethod
+    def _how_to_fix(name, spec) -> str:
+        """A refusal the model cannot act on is a refusal that teaches it nothing.
+
+        The hint used to be `expected: {json of the schema properties}`. For a
+        tool taking no arguments that renders as `expected: {}` - an empty object
+        and no instruction. Measured consequence: the model called
+        `read_page(url=...)`, was refused, read `expected: {}`, concluded the tool
+        could not retrieve the page, and ended the task `out_of_scope` with the
+        detail "Unable to retrieve page content due to tool limitations".
+
+        It had misread its own malformed call as a fact about the world. The gate
+        was right and the message was useless, so the correction never happened.
+        """
+        props = spec.schema.get("properties") or {}
+        if not props:
+            return f"{name} takes no arguments. Call it with {{}}."
+        required = spec.schema.get("required") or []
+        defs = spec.schema.get("$defs") or {}
+        parts = []
+        for field, meta in props.items():
+            # Pydantic puts an Enum in $defs and leaves a $ref behind, so the
+            # permitted values - the single most useful thing in the message -
+            # are not in `meta` at all unless the reference is followed. The
+            # whole point of the merged stop tool is that a wrong value comes
+            # back naming the right ones; that only works if they are here.
+            ref = meta.get("$ref") or (meta.get("allOf") or [{}])[0].get("$ref")
+            if ref:
+                meta = {**defs.get(ref.rsplit("/", 1)[-1], {}), **meta}
+            kind = meta.get("type", "value")
+            allowed = meta.get("enum")
+            if allowed:
+                kind = " | ".join(repr(a) for a in allowed)
+            parts.append(f"{field}: {kind}"
+                         + ("" if field in required else " (optional)"))
+        return f"{name} takes exactly: " + "; ".join(parts)
+
     async def dispatch(self, call: ToolCall):
         if not isinstance(call.name, str) or not isinstance(call.args, dict):
             return obs_err("malformed_call", "name must be a string, args an object"), None
@@ -98,7 +137,7 @@ class Dispatcher:
             f0 = e.errors()[0]
             return obs_err("schema_violation",
                            f"{'.'.join(str(x) for x in f0['loc'])}: {f0['msg']}",
-                           f"expected: {json.dumps(spec.schema['properties'])[:200]}"), spec.tier
+                           self._how_to_fix(call.name, spec)), spec.tier
         except GateError as e:
             return obs_err(e.code, e.msg), spec.tier
         return await spec.fn(**clean), spec.tier

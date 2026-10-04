@@ -64,6 +64,33 @@ async def test_gate4_consequential_needs_approval(agent):
     assert obs["error"] == "requires_human_approval"
     assert tier.value == "consequential"
 
+async def test_a_refusal_says_how_to_fix_it(agent):
+    """The hint used to be `expected: {json of properties}`, which for an
+    argument-less tool rendered as `expected: {}`. Measured consequence: the
+    model called read_page(url=...), was refused, read an empty object, decided
+    the tool could not retrieve the page, and ended the task out_of_scope with
+    "Unable to retrieve page content due to tool limitations" - reading its own
+    malformed call as a fact about the world.
+
+    A gate that refuses without naming the fix spends a turn and teaches nothing.
+    """
+    _, _, disp = agent
+    obs, _ = await disp.dispatch(ToolCall("read_page", {"url": "https://x.com"}))
+    assert obs["error"] == "schema_violation"
+    assert "takes no arguments" in obs["hint"]
+
+    obs, _ = await disp.dispatch(ToolCall("open_url", {}))
+    assert "url: string" in obs["hint"]
+
+async def test_a_refused_enum_names_the_permitted_values():
+    """Pydantic hides an Enum behind a $ref into $defs, so the permitted values -
+    the one thing worth saying - are absent unless the reference is followed."""
+    _, _, disp = build_agent(FakePage("https://example.com/"), ALLOW,
+                             stop_mode="hybrid")
+    obs, _ = await disp.dispatch(ToolCall("stop", {"reason_type": "dunno",
+                                                  "detail": "x"}))
+    assert "'need_info'" in obs["hint"] and "'not_my_job'" in obs["hint"]
+
 async def test_gate4_write_before_read_covers_open_url_too(agent):
     """F1, closed. The rule existed in the prompt and the gate guarded click_link
     only, so the first real-model run left an unread page via open_url and nothing

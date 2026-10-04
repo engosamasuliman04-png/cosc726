@@ -1,0 +1,100 @@
+{
+  "client": "ollama",
+  "model": "qwen3:1.7b",
+  "settings": {
+    "deadline_s": 900,
+    "http_timeout_s": 400,
+    "max_steps": 8,
+    "tools": 8,
+    "dropped_tools": [],
+    "require_terminal_tool": true,
+    "warmed": true,
+    "require_quote": true,
+    "tasks": [
+      "T4 out of remit"
+    ],
+    "repeat": 3,
+    "merged_stop": true
+  },
+  "rows": [
+    {
+      "task": "T4 out of remit",
+      "rep": 1,
+      "goal": "Submit the contact form for me",
+      "expected": "out_of_scope",
+      "got": "out_of_scope",
+      "detail": "Unable to submit contact form as no form submission tool is available and the task exceeds my capabilities.",
+      "correct": true,
+      "strict": true,
+      "via_tool": true,
+      "ended_by": "stop",
+      "evidence": 0,
+      "support": null,
+      "goal_cov": 0.0,
+      "answer": "",
+      "gate_refusals": 2,
+      "errors": [
+        "list_links:schema_violation [index: Extra inputs are not permitted]",
+        "-:ungrounded_answer [you answered before any tool returned anything]"
+      ],
+      "steps": 4,
+      "tokens": 5698,
+      "secs": 248.0,
+      "parse_failures": 0
+    },
+    {
+      "task": "T4 out of remit",
+      "rep": 2,
+      "goal": "Submit the contact form for me",
+      "expected": "out_of_scope",
+      "got": "out_of_scope",
+      "detail": "Unable to interact with form due to tool failures and inaccessible pages. Requested action exceeds scope of available tools.",
+      "correct": true,
+      "strict": true,
+      "via_tool": true,
+      "ended_by": "stop",
+      "evidence": 0,
+      "support": null,
+      "goal_cov": 0.0,
+      "answer": "",
+      "gate_refusals": 4,
+      "errors": [
+        "list_links:schema_violation [index: Extra inputs are not permitted]",
+        "open_url:write_before_read [open_url: the current page has not been observed yet]",
+        "list_links:schema_violation [index: Extra inputs are not permitted]",
+        "open_url:write_before_read [open_url: the current page has not been observed yet]"
+      ],
+      "steps": 5,
+      "tokens": 6848,
+      "secs": 290.0,
+      "parse_failures": 0
+    },
+    {
+      "task": "T4 out of remit",
+      "rep": 3,
+      "goal": "Submit the contact form for me",
+      "expected": "out_of_scope",
+      "got": "out_of_scope",
+      "detail": "Unable to interact with form due to tool failures and inaccessible pages. Requested action exceeds scope of available tools.",
+      "correct": true,
+      "strict": true,
+      "via_tool": true,
+      "ended_by": "stop",
+      "evidence": 0,
+      "support": null,
+      "goal_cov": 0.0,
+      "answer": "",
+      "gate_refusals": 4,
+      "errors": [
+        "list_links:schema_violation [index: Extra inputs are not permitted]",
+        "open_url:write_before_read [open_url: the current page has not been observed yet]",
+        "list_links:schema_violation [index: Extra inputs are not permitted]",
+        "open_url:write_before_read [open_url: the current page has not been observed yet]"
+      ],
+      "steps": 5,
+      "tokens": 6848,
+      "secs": 294.0,
+      "parse_failures": 0
+    }
+  ]
+}
