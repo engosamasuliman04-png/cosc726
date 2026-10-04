@@ -128,6 +128,21 @@ async def main():
                     help="finish must carry evidence_quote, and the quote must "
                          "appear verbatim in a tool result. Off by default so the "
                          "before/after comparison has a before.")
+    # Run O scored 3/4; the same code, repeated three times, scored 4/12, and T2
+    # went from `complete` to failing identically every time. Old code and new code
+    # both failed it, so the repository was not the variable - the resident model
+    # was. `--cold` unloads it before every task so each run starts from the same
+    # server state, at the cost of a ~100s load each time.
+    ap.add_argument("--cold", action="store_true",
+                    help="unload the model before each task (keep_alive: 0) so runs "
+                         "do not inherit the previous run's cache. Slow and the only "
+                         "way two runs are comparable.")
+    ap.add_argument("--quote-same-page", action="store_true",
+                    help="stricter: the quote must appear in the text of the page "
+                         "named by evidence_url, not merely somewhere in what was "
+                         "read. Closes a hole --require-quote leaves open - a quote "
+                         "from page A beside a URL for page B - and is off by "
+                         "default so run O stays comparable.")
     ap.add_argument("--allow-prose-exit", action="store_true",
                     help="restore the free exit: accept grounded prose as complete, "
                          "without a terminal tool call. Reproduces the runs taken "
@@ -144,6 +159,20 @@ async def main():
             f"--timeout ({args.timeout}s) must be shorter than --deadline "
             f"({args.deadline}s), or a hanging call crashes the run instead of "
             "stopping it with a named reason.")
+
+    # A flag that silently does nothing is the `expected: {}` mistake aimed at the
+    # operator instead of the model: the run completes, the settings record
+    # `quote_same_page: true`, and no such check ever ran.
+    if args.quote_same_page and not args.require_quote:
+        raise SystemExit("--quote-same-page has no effect without --require-quote: "
+                         "it narrows where the quote is looked for, it does not "
+                         "ask for one.")
+
+    # With --cold the first task unloads the model anyway, so warming it first
+    # spends ~100s producing the state the next line discards.
+    if args.cold and not args.no_warm:
+        print("--cold: skipping the warm-up, which the first unload would undo\n")
+        args.no_warm = True
 
     if args.client != "heuristic" and not args.no_warm:
         print(f"warming {args.model} (a cold load is ~100s and would skew task 1)...",
@@ -166,14 +195,48 @@ async def main():
     for rep in range(1, args.repeat + 1):
       for label, goal, expected in tasks:
         tag = f"{label} #{rep}" if args.repeat > 1 else label
+        if args.cold and args.client != "heuristic":
+            try:
+                OllamaBackend(args.model,
+                              transport=HttpTransport(timeout=args.timeout)).unload()
+            except Exception as e:
+                # A failed unload means the next run inherits state, which is the
+                # thing being controlled for. Say so; do not silently continue as
+                # though the control held.
+                print(f"  WARNING: unload failed ({e}); this run is not cold",
+                      flush=True)
         print(f"[{tag}] running...", flush=True)
         client = make_client(args.client, args.model, goal, args.timeout)
         async with async_playwright() as p:
             b = await p.chromium.launch(headless=True)
             pg = await b.new_page()
-            await pg.goto("https://example.com")
+            # SETUP, not agency. A slow network made Page.goto raise, which took
+            # the whole evaluation down on task 1: three tasks never ran and no
+            # results file was written. The same shape as the HTTP timeout fixed
+            # earlier - an external call that raises instead of producing a named
+            # outcome. The project's claim is that every failure leaves a record;
+            # a crash during setup is the one path that was still breaking it.
+            #
+            # The task is recorded as `setup_failed` and the run continues. It is
+            # deliberately NOT a stop reason: the agent never started, so counting
+            # it among the agent's outcomes would be a lie in the other direction.
+            try:
+                await pg.goto("https://example.com")
+            except Exception as e:
+                print(f"  setup_failed: {type(e).__name__}: {str(e)[:90]}")
+                await b.close()
+                rows.append({"task": label, "rep": rep, "goal": goal,
+                             "expected": expected, "got": "setup_failed",
+                             "detail": f"{type(e).__name__}: {str(e)[:200]}",
+                             "correct": False, "strict": False, "via_tool": False,
+                             "ended_by": "-", "evidence": 0, "support": None,
+                             "goal_cov": 0.0, "gate_refusals": 0, "errors": [],
+                             "answer": "", "steps": 0, "tokens": 0, "secs": 0.0,
+                             "parse_failures": 0})
+                continue
             _, reg, disp = build_agent(pg, ALLOW,
                                        require_quote=args.require_quote,
+                                       quote_same_page=args.quote_same_page,
                                        stop_mode=args.stop_mode)
             for name in args.drop_tool:      # the dispatcher shares this dict
                 if reg.pop(name, None) is None:
@@ -271,6 +334,11 @@ async def main():
             print(f"  {r['task']:<18} {'support ' + str(r['support']):<14} "
                   f"{r['answer'][:90]}")
 
+    broken = [r for r in rows if r["got"] == "setup_failed"]
+    if broken:
+        print(f"\n  {len(broken)} task(s) never started - the browser could not "
+              f"reach the page. Those rows measure the network, not the agent.")
+
     n, strict = sum(r["correct"] for r in rows), sum(r["strict"] for r in rows)
     print(f"\ncompletion (loose) : {n}/{len(rows)}   "
           f"stop reason matched expected")
@@ -306,7 +374,9 @@ async def main():
                       "dropped_tools": args.drop_tool,
                       "require_terminal_tool": not args.allow_prose_exit,
                       "warmed": not args.no_warm,
+                      "cold_between_tasks": args.cold,
                       "require_quote": args.require_quote,
+                      "quote_same_page": args.quote_same_page,
                       "tasks": [t[0] for t in tasks],
                       "repeat": args.repeat,
                       "stop_mode": args.stop_mode},

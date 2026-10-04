@@ -28,6 +28,27 @@ def test_tool_calling_is_a_template_property_not_a_size_property(caps, expected)
     assert b.supports_tools() is expected
 
 
+# ------------------------------------------- what makes a run comparable
+def test_the_request_pins_both_temperature_and_seed():
+    """`temperature: 0` was sent from the first commit and was read as proof of
+    determinism. It is necessary and not sufficient, and no seed was ever sent.
+    Pinning one removes sampling from the list of explanations for drift; it does
+    not remove server-side cache state, which is where the evidence points."""
+    t = FakeTransport(["completion", "tools"], [prose("x")])
+    OllamaBackend("fake", t).chat([{"role": "user", "content": "hi"}])
+    assert t.seen_payload["options"]["temperature"] == 0
+    assert t.seen_payload["options"]["seed"] == 0
+
+def test_unload_asks_the_server_to_drop_the_model():
+    """Two runs of identical code stopped agreeing, and old code and new code failed
+    T2 the same way - so the repository was not the variable, the resident model
+    was. A run that starts from an unloaded model is one that can be compared."""
+    t = FakeTransport(["completion", "tools"], [prose("")])
+    OllamaBackend("fake", t).unload()
+    assert t.seen_payload["keep_alive"] == 0
+    assert t.seen_payload["messages"] == []
+
+
 def test_a_missing_model_raises_instead_of_reporting_no_tools():
     """An earlier version had a bare `except` here and returned []. A model that
     did not exist reported "tool calling: False", which looks like a legitimate

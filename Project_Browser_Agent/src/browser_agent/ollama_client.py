@@ -168,13 +168,33 @@ class HttpTransport:
 
 class OllamaBackend:
     def __init__(self, model=None, transport=None, think=None,
-                 num_predict=256, num_ctx=8192):
+                 num_predict=256, num_ctx=8192, seed=0):
         self.model = model or config.model()
         self.t = transport or HttpTransport()
         self._caps = None
         self.think = think            # False disables hidden reasoning on thinking models
         self.num_predict = num_predict
         self.num_ctx = num_ctx
+        # `temperature: 0` was sent from the start and was treated as proof that
+        # the model was deterministic. It is not sufficient: T2 produced 5302
+        # tokens on the first call after a load and 5365 on every call after
+        # that, measured on the committed code AND on the modified code. The
+        # drift is in the server, not in the sampler, but a seed costs nothing
+        # and removes sampling as a candidate explanation. Anything left after
+        # it is cache or batching state, which is where the evidence points.
+        self.seed = seed
+
+    def unload(self) -> None:
+        """Ask the server to drop the model from memory (`keep_alive: 0`).
+
+        The point is a known starting state. With the model resident, one request's
+        KV cache is still there for the next, so run N+1 is not independent of run
+        N - which is how a 3/4 result stopped reproducing with no code change. A
+        run that begins from an unloaded model pays ~100s and gets a run that can
+        be compared to another run.
+        """
+        self.t.post("/api/chat", {"model": self.model, "messages": [],
+                                  "keep_alive": 0})
 
     def capabilities(self) -> list:
         """ollama show <model> -> capabilities. 'tools' is what we need.
@@ -196,7 +216,8 @@ class OllamaBackend:
 
     def chat(self, messages, tools=None) -> dict:
         payload = {"model": self.model, "messages": messages, "stream": False,
-                   "options": {"temperature": 0,            # deterministic: fixtures matter
+                   "options": {"temperature": 0,            # necessary, NOT sufficient
+                               "seed": self.seed,           # removes sampling as a cause
                                "num_predict": self.num_predict,     # bound the generation
                                "num_ctx": self.num_ctx}}            # 4096 truncates late steps
         if tools:

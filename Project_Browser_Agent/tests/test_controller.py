@@ -217,6 +217,74 @@ async def test_the_gate_checks_existence_not_support():
                         "This domain is for use")
     assert res.stop_reason == "complete"
 
+# ------------------------------------- the quote and the URL must agree
+async def two_pages_then_finish(url, quote, quote_same_page=True):
+    """Read page 1, navigate, read page 2, then cite. Both pages' text is in
+    `observed`, which is the situation the merged check could not see."""
+    _, reg, disp = build_agent(FakePage("https://example.com/"), ALLOW,
+                               require_quote=True,
+                               quote_same_page=quote_same_page)
+    return await run_agent(ScriptedClient([
+        R("read_page", {}),
+        R("open_url", {"url": "https://www.iana.org/help/example-domains"}),
+        R("read_page", {}),
+        R("finish", {"answer": "a", "evidence_url": url,
+                     "evidence_quote": quote})]), disp, reg, SYSTEM, "q",
+        max_steps=6)
+
+async def test_a_quote_from_another_page_passes_the_merged_check():
+    """The hole, demonstrated before it is closed. `seen_text()` concatenated every
+    page, so "RFC 2606 reserves" - text from the IANA page - passed beside an
+    evidence_url pointing at example.com. The citation names a page that does not
+    contain the sentence, and the gate said yes."""
+    res = await two_pages_then_finish("https://example.com/", "RFC 2606 reserves",
+                                      quote_same_page=False)
+    assert res.stop_reason == "complete"
+
+async def test_a_quote_must_be_on_the_page_it_cites():
+    """Closed. The claim is "this sentence is on THAT url", so the text of that
+    url is what it is checked against - not the union of everything ever read."""
+    res = await two_pages_then_finish("https://example.com/", "RFC 2606 reserves")
+    assert res.trace[3]["obs"]["error"] == "quote_not_on_cited_page"
+
+    # ...and the same quote with the right URL is accepted, so the gate narrows
+    # the check rather than forbidding multi-page work.
+    res = await two_pages_then_finish(
+        "https://www.iana.org/help/example-domains", "RFC 2606 reserves")
+    assert res.stop_reason == "complete" and len(res.evidence) == 1
+
+async def test_citing_a_page_that_was_never_read_is_refused_by_name():
+    """A URL inside the allowlist that no READ tool ever returned. The old merged
+    check could not express this at all, because it never looked at the URL."""
+    res = await two_pages_then_finish("https://example.com/pricing",
+                                      "Example Domain")
+    obs = res.trace[3]["obs"]
+    assert obs["error"] == "evidence_url_not_observed"
+    assert "example.com" in obs["detail"]          # names the pages it did read
+
+async def test_a_trailing_slash_does_not_invalidate_a_citation():
+    """A gate that refuses a correct citation over punctuation is worse than the
+    hole it closes. The comparison is normalised: fragment dropped, case folded,
+    trailing slash ignored. A query string is NOT ignored - `?page=2` is a
+    different page.
+
+    `HTTPS://EXAMPLE.COM/` is absent deliberately: `FinishArgs.evidence_url`
+    requires a lowercase `https://` prefix, so an upper-cased scheme never reaches
+    this gate - it is refused one gate earlier, by the schema. Folding case here
+    is for the host, which a redirect can return capitalised.
+    """
+    for url in ["https://example.com", "https://example.com/",
+                "https://EXAMPLE.com/#main"]:
+        _, reg, disp = build_agent(FakePage("https://example.com/"), ALLOW,
+                                   require_quote=True, quote_same_page=True)
+        res = await run_agent(ScriptedClient([
+            R("read_page", {}),
+            R("finish", {"answer": "The heading is Example Domain.",
+                         "evidence_url": url,
+                         "evidence_quote": "Example Domain"})]),
+            disp, reg, SYSTEM, "q")
+        assert res.stop_reason == "complete", url
+
 # -------------------------------------------------- the termination guard
 async def test_grounded_plain_answer_completes_only_when_prose_is_allowed():
     """Grounded prose used to be accepted as `complete`. That was the free exit:
