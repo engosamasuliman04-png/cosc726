@@ -7,7 +7,8 @@ four different failures.
 
 import pytest
 
-from browser_agent import SYSTEM, build_agent, is_capped, run_agent
+from browser_agent import (SYSTEM, ToolCall, build_agent, is_capped,
+                           run_agent, system_for)
 from browser_agent.clients import HeuristicClient, ScriptedClient
 from browser_agent.fakes import ALLOW, FakePage, R
 
@@ -107,6 +108,80 @@ async def test_model_can_correct_itself():
     assert res.stop_reason == "complete"
     assert res.trace[0]["obs"]["error"] == "ungrounded_answer"
     assert len(res.evidence) == 1
+
+# ------------------------------------------------------ the merged stop tool
+@pytest.mark.parametrize("reason_type,expected", [
+    ("answered",   "complete"),
+    ("need_info",  "blocked"),
+    ("not_my_job", "out_of_scope"),
+])
+async def test_stop_maps_each_reason_to_its_own_terminal(reason_type, expected):
+    """Three tools become one tool and a field. The stop reasons are unchanged -
+    only how the model selects them moves, from picking a tool to filling a slot
+    the schema checks."""
+    _, reg, disp = build_agent(FakePage("https://example.com/"), ALLOW,
+                               stop_mode="merged")
+    assert set(reg) & {"finish", "blocked", "out_of_scope"} == set()
+    args = {"reason_type": reason_type, "detail": "because"}
+    if reason_type == "answered":
+        args["evidence_url"] = "https://example.com/"
+    res = await run_agent(ScriptedClient([R("read_page", {}), R("stop", args)]),
+                          disp, reg, SYSTEM, "q")
+    assert res.stop_reason == expected
+
+async def test_an_invalid_reason_type_names_the_permitted_ones():
+    """The point of the merge. A bad tool choice drifts silently to a neighbour;
+    a bad FIELD comes back as a schema_violation listing what was allowed, which
+    the model reads and can correct. out_of_scope was never selected in nine runs
+    under three sets of descriptions - this moves that decision somewhere the
+    code can answer."""
+    _, reg, disp = build_agent(FakePage("https://example.com/"), ALLOW,
+                               stop_mode="merged")
+    obs, _ = await disp.dispatch(ToolCall("stop", {"reason_type": "dunno",
+                                                  "detail": "x"}))
+    assert obs["error"] == "schema_violation"
+    assert "not_my_job" in str(obs)
+
+async def test_answered_without_a_url_is_refused():
+    _, reg, disp = build_agent(FakePage("https://example.com/"), ALLOW,
+                               stop_mode="merged")
+    obs, _ = await disp.dispatch(ToolCall("stop", {"reason_type": "answered",
+                                                  "detail": "the heading"}))
+    assert obs["error"] == "schema_violation"
+
+@pytest.mark.parametrize("reason_type,expected", [
+    ("need_info", "blocked"), ("not_my_job", "out_of_scope"),
+])
+async def test_hybrid_keeps_finish_and_merges_only_the_refusals(reason_type, expected):
+    """The shape the measurements point at: the field where the choice is hard
+    (two refusals that look alike), the verb where it is not (answering)."""
+    _, reg, disp = build_agent(FakePage("https://example.com/"), ALLOW,
+                               stop_mode="hybrid")
+    assert "finish" in reg and "stop" in reg
+    assert {"blocked", "out_of_scope"} & set(reg) == set()
+    res = await run_agent(ScriptedClient([R("read_page", {}),
+        R("stop", {"reason_type": reason_type, "detail": "because"})]),
+        disp, reg, SYSTEM, "q")
+    assert res.stop_reason == expected
+
+async def test_hybrid_stop_cannot_be_used_to_answer():
+    """'answered' is not in the hybrid enum: answering goes through finish, which
+    carries the evidence fields. One way to claim an answer, not two."""
+    _, reg, disp = build_agent(FakePage("https://example.com/"), ALLOW,
+                               stop_mode="hybrid")
+    obs, _ = await disp.dispatch(ToolCall("stop", {"reason_type": "answered",
+                                                  "detail": "x"}))
+    assert obs["error"] == "schema_violation"
+
+async def test_the_prompt_lists_exactly_the_registry():
+    """A hand-written tool list can advertise a tool the registry lacks - F1 one
+    level up. With two registry shapes, a fixed list would be wrong for one of
+    them by construction, so it is rendered from the registry instead."""
+    _, plain, _ = build_agent(FakePage("https://example.com/"), ALLOW)
+    _, merged, _ = build_agent(FakePage("https://example.com/"), ALLOW,
+                               stop_mode="merged")
+    assert "stop(" in system_for(merged) and "finish(" not in system_for(merged)
+    assert "finish(" in system_for(plain) and "stop(" not in system_for(plain)
 
 # --------------------------------------------------- the verification gate
 async def quoting(answer, quote):

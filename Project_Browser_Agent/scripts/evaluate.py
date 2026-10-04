@@ -18,7 +18,8 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 
 from browser_agent import config
-from browser_agent import SYSTEM, Tier, answer_support, build_agent, run_agent
+from browser_agent import (Tier, answer_support, build_agent, run_agent,
+                           system_for)
 from browser_agent.clients import goal_coverage
 from browser_agent.clients import HeuristicClient
 from browser_agent.ollama_client import HttpTransport, OllamaBackend, OllamaClient
@@ -113,6 +114,16 @@ async def main():
                     help="run each task N times and report the distinct outcomes. "
                          "A task that answers differently across repeats is not "
                          "evidence of anything a single run could show.")
+    # The three CONTROL tools as one tool with a validated reason_type. Built
+    # because out_of_scope was never selected in nine runs under three sets of
+    # descriptions, and removing its competitor sent the model to prose rather
+    # than to it: selecting among tools is where this model fails, so the choice
+    # moves into a field the schema can check.
+    ap.add_argument("--stop-mode", default="split",
+                    choices=["split", "merged", "hybrid"],
+                    help="split: finish/blocked/out_of_scope. merged: one "
+                         "stop(reason_type). hybrid: finish plus stop over the "
+                         "two refusals - the shape the measurements point at.")
     ap.add_argument("--require-quote", action="store_true",
                     help="finish must carry evidence_quote, and the quote must "
                          "appear verbatim in a tool result. Off by default so the "
@@ -162,13 +173,14 @@ async def main():
             pg = await b.new_page()
             await pg.goto("https://example.com")
             _, reg, disp = build_agent(pg, ALLOW,
-                                       require_quote=args.require_quote)
+                                       require_quote=args.require_quote,
+                                       stop_mode=args.stop_mode)
             for name in args.drop_tool:      # the dispatcher shares this dict
                 if reg.pop(name, None) is None:
                     raise SystemExit(f"--drop-tool {name}: not in the registry "
                                      f"({sorted(reg)})")
             t0 = time.time()
-            r = await run_agent(client, disp, reg, SYSTEM, goal,
+            r = await run_agent(client, disp, reg, system_for(reg), goal,
                                 max_steps=8, deadline_s=args.deadline,
                                 require_terminal_tool=not args.allow_prose_exit)
             secs = time.time() - t0
@@ -296,7 +308,8 @@ async def main():
                       "warmed": not args.no_warm,
                       "require_quote": args.require_quote,
                       "tasks": [t[0] for t in tasks],
-                      "repeat": args.repeat},
+                      "repeat": args.repeat,
+                      "stop_mode": args.stop_mode},
          "rows": rows}, indent=2))
     print(f"\nwritten: {args.out}")
 

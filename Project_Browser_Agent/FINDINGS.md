@@ -6,8 +6,8 @@ and what happened when the measurements themselves turned out to be wrong.
 
 Each finding carries a confidence label. Claims that were stated here and later
 overturned are **not deleted**: what was claimed, why it was wrong, and what
-replaced it is the most useful part of the record. Five such corrections are
-below, and three of them were corrections to the author's own measurement
+replaced it is the most useful part of the record. Six such corrections are
+below, and four of them were corrections to the author's own measurement
 assumptions rather than to the model's behaviour.
 
 ## Setup
@@ -58,6 +58,28 @@ All with the termination guard on (F7) unless noted.
 | D | `blocked` narrowed to facts only | blocked | unterminated | blocked | blocked | 1/4 | 1/4 | 3/4 |
 | F | `blocked` removed from the registry | complete | **complete** | **complete** | unterminated | 2/4 | 2/4 | 3/4 |
 
+Runs after F changed the tool *shape* and the gates rather than the wording, so
+they are tabulated by condition instead of being listed task by task. Per-task
+detail for each is in its `results_*.json`.
+
+| Run | What changed | Result |
+|---|---|---|
+| K | `write_before_read` widened to every WRITE tool | the gate fired on a real model run — F1 closed |
+| — | `stop(reason_type)` tested on T4 alone | `out_of_scope` selected 3/3, stable — F12 |
+| — | full set, `--stop-mode merged` | strict 1/4 |
+| — | full set, `--stop-mode hybrid` | strict 1/4 |
+| N | `--require-quote`, hint still `expected: {}` | the quote gate fired; T2 lost to a useless hint — F11 |
+| **O** | `split` + `--require-quote` + actionable hints | **strict 3/4, via control tool 4/4** |
+
+Run O is the project's best result: `T1` and `T2` both end through `finish` with
+a URL and a quote verified against what the tools returned, `T3` reaches `blocked`
+in one step with zero refusals, and all four runs end through a control tool.
+`T4` still chooses `blocked` over `out_of_scope`, exactly as F3 predicts.
+
+**Caveat, stated before the number is used.** Run O is one run of a harness F0
+shows to be unstable per task. It is reported as the best observed outcome, not
+as a measured rate; `--repeat 3` is the test that would make it one.
+
 `parse_failures` was 0 in every run. The model's replies were always well-formed
 and always understood, which excludes malformed output as an explanation
 anywhere below.
@@ -81,26 +103,32 @@ that a single run is not evidence of a behaviour change, and that only runs made
 through the same script with the same invocation may be compared.
 
 The earlier claim was reasonable from the data in hand and wrong anyway. It had
-already been used to justify running each condition once.
+already been used to justify running each condition once. `--repeat N` with a
+stability summary was added as a direct consequence.
 
 ## F1 — A prompt rule without a matching gate constrains nothing
 
-**Confidence: confirmed.**
+**Confidence: confirmed. Closed in run K.**
 
 The prompt says `read_page` is to be called first on any new page, and
 `run_agent.py` navigates to the start URL before the loop begins, so the page is
 loaded and `read_page` is the correct first action. The model called `open_url`.
 
 The instruction was not followed — expected. What was not expected: no gate
-refused the call. `Dispatcher._coheres` does contain a `write_before_read` check,
-but it guards `click_link` only. The docstring of `run_agent.py` even lists
+refused the call. `Dispatcher._coheres` did contain a `write_before_read` check,
+but it guarded `click_link` only. The docstring of `run_agent.py` even listed
 `write_before_read` as an expected outcome of this exact scenario: an error code
 the dispatcher could not produce for it.
 
-A prompt rule and its gate are two separate artifacts and nothing keeps them in
-step. The same gap appeared twice more: in `evaluate.py`, which lacked the
-`timeout < deadline` guard that `run_agent.py` had carried from the start (F6),
-and in the free prose exit (F7).
+The gate now covers every WRITE-tier tool, and it fired on a live model run.
+`open_url` from an unread page is the same mistake as clicking from one: the
+agent is acting on a page it has not looked at.
+
+The same class of gap appeared three more times — in `evaluate.py`, which lacked
+the `timeout < deadline` guard that `run_agent.py` had carried from the start
+(F6); in the free prose exit (F7); and in the `<tools>` block of the system
+prompt, which was hand-written beside the registry and could drift from it. The
+last is now rendered *from* the registry, so the two cannot disagree.
 
 ## F2 — Evaluation tasks must be page-dependent
 
@@ -116,25 +144,26 @@ The evaluation set was rewritten so that no task can be answered without opening
 the page. Confound acknowledged: the two goals also differ in hop count and
 phrasing.
 
-## F3 — `blocked` is reachable, `out_of_scope` is not
+## F3 — `blocked` is reachable as a tool; `out_of_scope` is not
 
-**Confidence: confirmed by ablation. This finding replaces two earlier ones.**
+**Confidence: confirmed by ablation. This finding replaces two earlier ones, and
+is itself narrowed by F12.**
 
-Three of the eight tools exist solely to end a run. Across seven runs and three
+Three of the eight tools exist solely to end a run. Across nine runs and three
 different description sets:
 
 - **`blocked`** is selected readily — too readily (F8).
 - **`finish`** is selected once the prose exit is closed (F7).
-- **`out_of_scope` has never been called. Not once, in any run, under any
-  wording.**
+- **`out_of_scope` was never called. Not once, in any run, under any wording.**
 
-Run F settles why. With `blocked` removed from the registry — but still listed in
-the prompt, so a call to it returns `unknown_tool` and the model must choose
-again — T4 did not fall back to `out_of_scope`. It fell back to prose, was
-refused twice, and ended `unterminated`.
+Run F settles why it is not mere competition. With `blocked` removed from the
+registry — but still listed in the prompt, so a call to it returns `unknown_tool`
+and the model must choose again — T4 did not fall back to `out_of_scope`. It fell
+back to prose, was refused twice, and ended `unterminated`.
 
-So this is not competition between two tools. For this model, on this task,
-`out_of_scope` is effectively unreachable.
+So for this model, on this task, `out_of_scope` **as a tool name** is effectively
+unreachable. F12 shows it becomes reachable the moment it stops being a tool name
+and becomes a value the schema checks.
 
 **What this file previously claimed.** First, that the model never invoked a
 control tool at all — measured under a 180 s deadline that cut it off before it
@@ -159,6 +188,11 @@ down: `schema_violation` was recorded without the tool or the field, though
 `dispatcher.py` had been putting "field: message" into `detail` all along. Both
 are the same error — a general name discarding the specific one that mattered.
 
+A third instance, and the clearest: a Playwright navigation timeout on task 1
+raised and took the whole evaluation with it. A failure before the agent has
+acted is not a stop reason — the agent never started — so it records a
+`setup_failed` row and the remaining tasks run.
+
 ## F5 — The completion metric is more permissive than it looks
 
 **Confidence: confirmed.**
@@ -167,6 +201,12 @@ are the same error — a general name discarding the specific one that mattered.
 `finish(answer, evidence_url)` and a run that merely stopped emitting tool calls
 as the same outcome, because both report `complete`. The baseline scored 3/4 that
 way and 1/4 by the stricter criterion the project actually claims.
+
+The instrument itself was broken first. `via_tool` was keyed on
+`obs["terminal"]` — which the prose fall-through also sets — so it reported
+`True` for precisely the runs it existed to catch. It now reads the trace entry's
+tool name and tier, and a regression test asserts the two completion paths are
+distinguishable from the trace alone.
 
 Closing the prose exit (F7) collapsed the gap between the two metrics to zero:
 the easy wins disappeared because they had been the gap.
@@ -214,7 +254,7 @@ The termination guard refuses a reply with no tool call, hands the model its own
 output back, and stops as `unterminated` after a second refusal. Measured effect,
 same model and same goal, guard the only difference: T3 moved from writing
 "Blocked" in prose to calling `blocked`; the first `evidence_url` in the project
-appeared; control-tool terminations rose from 1/4 to 3/4.
+appeared; control-tool terminations rose from 1/4 to 3/4, and to 4/4 in run O.
 
 The guard pushes rather than fails: a model that can reach the tool still does,
 which is the point — removing a cheaper option, not punishing the model for
@@ -280,21 +320,148 @@ citation supports the claim.**
 
 Two consequences. `blocked` is not a redundant tool competing with the others —
 it is the pressure valve that keeps the agent from inventing, and its cost is
-F8's over-selection. And the verification step, deferred until now as an
-improvement, is a requirement: it is the only check that would catch this
-sentence, because the sentence appears in no tool result.
+F8's over-selection. And verification, deferred until then as an improvement, is
+a requirement: it is the only check that would catch this sentence, because the
+sentence appears in no tool result.
 
-The three layers this implies, each added after measurement forced it:
+The three layers, each added after measurement forced it:
 
-| Guard | Asks |
-|---|---|
-| grounding | did it observe anything at all? |
-| termination | did it end through a tool? |
-| **verification (not yet built)** | **is what it said present in what it observed?** |
+| Guard | Asks | State |
+|---|---|---|
+| grounding | did it observe anything at all? | built |
+| termination | did it end through a tool? | built |
+| verification | is what it said present in what it observed? | built — F10 |
+
+## F10 — Verification by exact quote: existence is checkable, support is not
+
+**Confidence: confirmed, with a limit asserted in a test.**
+
+The quote gate is gate 3 applied to a claim. Gate 3 has always meant "refers to
+something that exists" — a link index, an allowlisted domain. A cited fact is the
+same kind of claim and was never checked. So `finish` now requires an
+`evidence_quote`, and the gate refuses it unless that text appears, as a
+substring, in what the READ tools actually returned.
+
+Substring and not similarity, deliberately. An exact quote needs no threshold,
+and a page never shown cannot be quoted from. The three previous attempts to
+measure a semantic property by lexical overlap all failed (F13); this one does
+not try to.
+
+It fires on real behaviour. Two quotes it refused:
+
+```
+The current page's visible text.
+The first link text is 'Learn more'.
+```
+
+Neither is a quote. The model writes *about* the page in the field meant for
+copying *from* it — the same substitution of description for evidence that F9
+produced one level up.
+
+**The limit, stated plainly and asserted by
+`test_the_gate_checks_existence_not_support`:** a true quote placed beside a
+false claim passes. The gate proves the quote was observed; it does not prove the
+answer follows from it. Closing that needs a judge, not a substring — and a judge
+is a second model, which is a different project.
+
+Measured effect: in run O both answering tasks produced a verified quote, and
+`via_tool` reached 4/4 for the first time.
+
+## F11 — A refusal that does not name the fix becomes a fact about the world
+
+**Confidence: confirmed by a single, fully traced instance.**
+
+The schema-violation hint was built as `expected: {json of the schema
+properties}`. For a tool taking no arguments that renders as:
+
+```
+expected: {}
+```
+
+An empty object and no instruction. What the model did with it, in run N, in
+order:
+
+1. called `read_page(url=...)` — `read_page` takes no arguments
+2. was refused with `schema_violation` and `expected: {}`
+3. concluded the tool could not retrieve the page
+4. ended the task `out_of_scope`, detail: *"Unable to retrieve page content due
+   to tool limitations"*
+
+The gate was right. The message was useless. So the correction never happened,
+and the agent recorded **its own malformed call as a limitation of the world**.
+This is the newest failure mode in the project and the one with the widest
+implications: an agent reads its error channel as evidence, so an uninformative
+error does not merely waste a turn — it teaches something false.
+
+`Dispatcher._how_to_fix` replaced it. It now returns
+`read_page takes no arguments. Call it with {}.` for argument-less tools and
+`open_url takes exactly: url: string` otherwise.
+
+**A correction inside the correction.** The first version of that function
+printed `reason_type: value` for the merged stop tool — one useless message
+swapped for another. Pydantic places an Enum in `$defs` and leaves a `$ref`
+behind, so the permitted values, the single most useful thing in the message, are
+absent unless the reference is followed. It now prints:
+
+```
+stop takes exactly: reason_type: 'need_info' | 'not_my_job'; detail: string
+```
+
+That was caught only by printing the hints and reading them before shipping. It
+would not have been caught by a passing test, because the test asserted the
+message existed.
+
+## F12 — Making a choice a schema field beats making it a tool name — and still is not a net win
+
+**Confidence: confirmed on T4; refuted as a general improvement.**
+
+F3 left `out_of_scope` unreachable. The hypothesis: the failure is in *selecting
+among tool names*, so make the distinction a field the schema validates instead —
+one `stop(reason_type, detail)` tool with an enum, where a wrong value comes back
+naming the right ones.
+
+On T4 in isolation it worked outright: `out_of_scope` selected 3/3, stable, after
+nine runs of never being selected at all. The framing holds: a choice the model
+must *name* is harder than a choice the schema *checks*.
+
+Then the full set, same model, same tasks:
+
+| Shape | Control tools | strict |
+|---|---|---|
+| `split` | `finish` / `blocked` / `out_of_scope` | **2/4** |
+| `merged` | `stop(answered \| need_info \| not_my_job)` | 1/4 |
+| `hybrid` | `finish` + `stop(need_info \| not_my_job)` | 1/4 |
+
+Fixing T4 broke T1 and T2. The hybrid was built to take the win from each and
+took neither — a prediction stated in advance and wrong, recorded here as such.
+
+**No shape dominates.** Each one makes a different task reachable, and the
+project ships `split` because it scores highest overall while leaving T4 as the
+documented failure. That is the honest reading: the tool surface is a trade-off
+under measurement, not a problem with a correct answer.
+
+## F13 — Lexical overlap cannot measure a semantic property. Three attempts.
+
+**Confidence: confirmed by three independent failures.**
+
+| Attempt | Intended to measure | Why it failed |
+|---|---|---|
+| `support` | is the answer grounded in what was read? | 0.0 for a true multi-hop answer *and* 0.0 for F9's fabrication |
+| a `support` threshold for refusal | reject ungrounded answers automatically | any threshold separating those two values is a guess |
+| `goal_cov` | does the answer address the goal? | 0.0 for T2's correct answer — a good answer does not echo the question |
+
+In run O, `support` was 0.0 on T1, whose answer is correct, and 1.0 on T2. The
+column is kept and reported, and it is **not** wired into any refusal. A metric
+that scores a right answer and an invented one identically cannot be allowed to
+reject either.
+
+Writing the threshold anyway was the tempting move each time, and it is how the
+first three wrong findings in this file were produced. Word overlap measures
+word overlap.
 
 ## The pattern worth naming
 
-Five times a check reported something false, and four of those pointed at the
+Six times a check reported something false, and five of those pointed at the
 model:
 
 | Check | Reported | Actually |
@@ -304,31 +471,39 @@ model:
 | the 180 s deadline | the model never decides to stop | it decides to stop at 232 s |
 | "deterministic" | one run per condition suffices | T1 has three outcomes under identical conditions |
 | `strict` | a cited answer is a grounded answer | the citation need not support the claim |
+| `expected: {}` | the hint tells the model what to send | it told the model the tool was broken |
 
-None was caught by reading the code. All five were caught by measuring again and
+None was caught by reading the code. All six were caught by measuring again and
 finding the numbers inconsistent with each other. A check that fails open is
 worse than no check: it moves the error somewhere nobody is looking, and it lends
 a wrong conclusion the authority of a measurement.
 
+The last row generalises past instruments to the agent itself. Everything the
+agent knows about the world arrives through the same channel as its errors, so
+the quality of a refusal message is not a developer convenience — it is training
+data for the next turn.
+
 ## What holds regardless
 
-No run crashed. Every failure — ungrounded answers, an off-allowlist navigation
-attempt, a stalled call, a repeated call, a refusal to use a tool — left through
-the same reporting path with a named stop reason and a complete trace, and every
-reply parsed cleanly.
+No run crashed, and the one crash that did occur — a navigation timeout before
+the agent acted — was converted into a recorded row rather than patched over.
+Every failure — ungrounded answers, an off-allowlist navigation attempt, a
+stalled call, a repeated call, a fabricated quote, a refusal to use a tool — left
+through the same reporting path with a named stop reason and a complete trace,
+and every reply parsed cleanly.
 
 The system was not built to succeed on every task with a 1.7B model; it was built
 so that failure is legible. In this evaluation the record was detailed enough to
-overturn five of the project's own conclusions, including three about its own
+overturn six of the project's own conclusions, including four about its own
 instruments.
 
 ## Open tests
 
 | Test | What it would settle | Cost |
 |---|---|---|
-| Build the verification guard: reject a `finish` answer containing claims absent from every tool result | Catches F9's fabrication | the next phase |
-| Add `--repeat N` and report spread, not single runs | F0 makes single runs weak evidence | small |
-| Merge the three control tools into `stop(reason_type, detail)` with a validated enum | If selecting among tools fails (F3), make it a field the schema checks instead | design change |
-| Run the same evaluation on a larger model, no code change | Tests the model seam, the project's main architectural claim | one run |
-| Extend `write_before_read` to all WRITE-tier tools | Closes F1 | small |
+| `--repeat 3` on run O's configuration | whether `strict 3/4` is a rate or one lucky draw (F0) | one long run |
+| Run the same evaluation on a larger model, no code change | tests the model seam, the project's main architectural claim | one run |
+| A judge model over `(answer, quote)` | F10's limit: the quote exists but need not support the claim | design change |
+| Give `out_of_scope` a schema-checked path without losing T1 and T2 | F12 found no shape that does both | design change |
+| Put `memory.py` and `planning.py` into the evaluation | both are built and tested and have never been measured | medium |
 | Why T2 and T3 are byte-stable while T1 and T4 drift | F0 is observed, not explained | investigation |
