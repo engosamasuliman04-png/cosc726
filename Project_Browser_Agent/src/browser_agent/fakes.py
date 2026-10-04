@@ -52,8 +52,10 @@ class FakeTransport:
     def __init__(self, caps, replies):
         self.caps, self.replies, self.i = caps, replies, 0
         self.seen_tools = None
+        self.seen_payload = None       # what was actually sent, options included
 
     def post(self, path, payload):
+        self.seen_payload = payload
         if path == "/api/show":
             return {"capabilities": self.caps}
         self.seen_tools = payload.get("tools")

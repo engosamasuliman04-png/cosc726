@@ -24,11 +24,15 @@ class GateError(Exception):
 
 class Dispatcher:
     def __init__(self, tools, registry, allow_consequential=False,
-                 require_quote=False):
+                 require_quote=False, quote_same_page=False):
         self.t = tools
         self.registry = registry
         self.allow_consequential = allow_consequential
         self.require_quote = require_quote
+        # Off by default so the run that measured `require_quote` stays
+        # comparable. A stricter gate is a hypothesis until a run says otherwise,
+        # and three findings in this project came from enforcing one first.
+        self.quote_same_page = quote_same_page
 
     def _refers(self, name, args):
         if name == "click_link":
@@ -58,7 +62,23 @@ class Dispatcher:
                 raise GateError("quote_missing",
                                 "finish needs evidence_quote: the words from the "
                                 "page that support this answer")
-            if q not in self.t.seen_text():
+            if self.quote_same_page:
+                # The claim is not "this sentence was seen somewhere", it is
+                # "this sentence is on THAT url". Checked against the merged text
+                # of every page, a quote copied from page A passes beside a URL
+                # pointing at page B - the same mistake as F1 one level up: the
+                # rule was wider than the claim it was guarding.
+                url = args.get("evidence_url", "")
+                page_text = self.t.seen_text(url)
+                if not page_text:
+                    raise GateError("evidence_url_not_observed",
+                                    f"no tool result came from {url!r}; "
+                                    f"pages read so far: {self.t.observed_urls()}")
+                if q not in page_text:
+                    raise GateError("quote_not_on_cited_page",
+                                    f"{args['evidence_quote'][:60]!r} is not in the "
+                                    f"text of {url}; cite the page the words are on")
+            elif q not in self.t.seen_text():
                 raise GateError("quote_not_observed",
                                 f"no tool result contains {args['evidence_quote'][:60]!r}; "
                                 "quote the page exactly, do not paraphrase")

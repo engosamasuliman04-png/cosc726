@@ -48,20 +48,48 @@ class BrowserTools:
         """Case and whitespace folded. A quote must match the TEXT, not its layout."""
         return " ".join(s.split()).lower()
 
-    def seen_text(self) -> str:
-        """Everything the READ tools have returned, across pages, as one string.
+    @staticmethod
+    def _same_page(a: str, b: str) -> bool:
+        """URL equality as a citation means it, not as a string.
+
+        A trailing slash, a fragment and a capitalised host are the same page to a
+        reader and three different strings to `==`. A gate that refuses a correct
+        citation over a slash is worse than the hole it closes, so the comparison
+        is normalised. Query strings are kept: `?page=2` IS a different page.
+        """
+        def norm(u: str) -> str:
+            return u.split("#", 1)[0].strip().lower().rstrip("/")
+        return norm(a) == norm(b)
+
+    def seen_text(self, url: Optional[str] = None) -> str:
+        """What the READ tools returned - all pages, or one named page.
 
         This is what a quote is checked against. Link labels are included because
         `list_links` is how the agent sees them - an answer about a link should be
         able to cite the link's own text.
+
+        `url` narrows it to a single page, and that argument is the whole point:
+        merged across pages, a quote copied from page A passes beside an
+        `evidence_url` pointing at page B. The claim being made is "this sentence
+        is on THAT page", so the text of that page is what it has to be checked
+        against. `observed` was already keyed by URL, so the narrower check needed
+        no new state - the same structure that fixed the stale-index bug.
         """
         parts = []
-        for page in self.observed.values():
+        for page_url, page in self.observed.items():
+            if url is not None and not self._same_page(page_url, url):
+                continue
             if page.get("text"):
                 parts.append(page["text"])
             for link in page.get("links") or []:
                 parts.append(str(link.get("text", "")))
         return self._flat(" ".join(parts))
+
+    def observed_urls(self) -> list[str]:
+        """The pages a READ tool actually returned something for. Named in a
+        refusal so "that page was never read" can be acted on."""
+        return [u for u, p in self.observed.items()
+                if p.get("text") or p.get("links")]
 
     @staticmethod
     def domain(url: str) -> str:

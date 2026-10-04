@@ -1,0 +1,72 @@
+{
+  "client": "ollama",
+  "model": "qwen3:1.7b",
+  "settings": {
+    "deadline_s": 900,
+    "http_timeout_s": 400,
+    "max_steps": 8,
+    "tools": 8,
+    "dropped_tools": [],
+    "require_terminal_tool": true,
+    "warmed": true,
+    "require_quote": true,
+    "quote_same_page": false,
+    "tasks": [
+      "T2 single page"
+    ],
+    "repeat": 2,
+    "stop_mode": "split"
+  },
+  "rows": [
+    {
+      "task": "T2 single page",
+      "rep": 1,
+      "goal": "What is the exact heading text on this page?",
+      "expected": "complete",
+      "got": "unterminated",
+      "detail": "wrote prose twice instead of calling a terminal tool",
+      "correct": false,
+      "strict": false,
+      "via_tool": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "support": null,
+      "goal_cov": 0.0,
+      "answer": "",
+      "gate_refusals": 2,
+      "errors": [
+        "-:no_terminal_tool [a run ends through a tool, not through prose]",
+        "-:no_terminal_tool [a run ends through a tool, not through prose]"
+      ],
+      "steps": 3,
+      "tokens": 5365,
+      "secs": 214.1,
+      "parse_failures": 0
+    },
+    {
+      "task": "T2 single page",
+      "rep": 2,
+      "goal": "What is the exact heading text on this page?",
+      "expected": "complete",
+      "got": "unterminated",
+      "detail": "wrote prose twice instead of calling a terminal tool",
+      "correct": false,
+      "strict": false,
+      "via_tool": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "support": null,
+      "goal_cov": 0.0,
+      "answer": "",
+      "gate_refusals": 2,
+      "errors": [
+        "-:no_terminal_tool [a run ends through a tool, not through prose]",
+        "-:no_terminal_tool [a run ends through a tool, not through prose]"
+      ],
+      "steps": 3,
+      "tokens": 5365,
+      "secs": 214.5,
+      "parse_failures": 0
+    }
+  ]
+}
