@@ -130,3 +130,46 @@ async def test_stale_link_indices():
 
     obs, _ = await disp.dispatch(ToolCall("click_link", {"index": 0}))   # page 2: no links
     assert obs["error"] == "no_links_known"
+
+# ------------------------------------------------- every refusal names a fix
+async def test_every_gate_refusal_carries_a_hint(agent):
+    """F11, the half that was left. The hint on `schema_violation` was fixed and
+    the ten GATE refusals were not, so they named the problem and never the fix.
+
+    Measured consequence, three runs out of three: told `write_before_read: the
+    current page has not been observed yet`, the agent retried open_url, then
+    answered in prose twice and was stopped by the grounding guard - without once
+    calling read_page, the only tool that clears that gate. Five steps spent
+    against a message that was accurate and unusable.
+    """
+    _, _, disp = agent
+    for call in [ToolCall("open_url", {"url": "https://iana.org/"}),
+                 ToolCall("click_link", {"index": 0}),
+                 ToolCall("open_url", {"url": "https://attacker.test/x"}),
+                 ToolCall("submit_form", {"reason": "confirm the purchase"})]:
+        obs, _ = await disp.dispatch(call)
+        assert obs.get("hint"), f"{obs['error']} refuses without saying what to do"
+
+async def test_the_write_gate_names_the_call_that_clears_it():
+    """Not "you have not observed the page" - which the agent read twice and did
+    not act on - but the name of the tool to call."""
+    _, _, disp = build_agent(FakePage("https://example.com/"), ALLOW)
+    obs, _ = await disp.dispatch(ToolCall("open_url", {"url": "https://iana.org/"}))
+    assert "read_page" in obs["hint"]
+
+def test_no_gate_can_be_added_without_a_hint():
+    """Structural, so the NEXT gate cannot repeat this. Reads the source and
+    fails if any GateError is constructed with fewer than three arguments - a
+    test that a passing behaviour test would not have caught, because a gate
+    that does not exist yet refuses nothing yet.
+    """
+    import ast
+    import pathlib
+    src = pathlib.Path(__file__).resolve().parents[1] / "src/browser_agent/dispatcher.py"
+    tree = ast.parse(src.read_text())
+    raises = [n for n in ast.walk(tree)
+              if isinstance(n, ast.Call) and getattr(n.func, "id", None) == "GateError"]
+    assert raises, "no GateError raises found - did the file move?"
+    missing = [ast.get_source_segment(src.read_text(), n)[:40]
+               for n in raises if len(n.args) < 3]
+    assert not missing, f"GateError raised without a hint: {missing}"
