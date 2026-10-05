@@ -46,6 +46,9 @@ class Dispatcher:
         # comparable. A stricter gate is a hypothesis until a run says otherwise,
         # and three findings in this project came from enforcing one first.
         self.quote_same_page = quote_same_page
+        # Set by run_agent. Kept because a refusal may want to quote the goal;
+        # the gate that used it is gone - see _did_you_mean's note.
+        self.goal = ""
 
     def _refers(self, name, args):
         if name == "click_link":
@@ -174,6 +177,60 @@ class Dispatcher:
                          + ("" if field in required else " (optional)"))
         return f"{name} takes exactly: " + "; ".join(parts)
 
+    def _did_you_mean(self, name, args) -> str:
+        """When the rejected arguments fit ANOTHER registered tool, name it.
+
+        Measured, every single run of the task written to reach
+        `pending_approval`: the agent called `read_page(reason=...)`.
+        `read_page` takes nothing; `reason` is `submit_form`'s only argument.
+        So the agent had assembled the right argument for the right tool and put
+        the wrong name in front of it - it was trying to propose, and could not
+        spell the call.
+
+        The old refusal said `read_page takes no arguments`, which is true and
+        does not help: it names what this tool is not, never what the arguments
+        ARE for. F11 again - a refusal the model cannot act on teaches nothing.
+
+        A gate on the WORDING was tried here first and was worse. `blocked`'s
+        question was refused when it restated the goal, on the assumption that a
+        question must request something new. That broke T3, where the question
+        legitimately IS the goal ("is this knowable?"), and the task escaped to
+        `out_of_scope` after three correct runs. Removed. The lesson was that
+        `blocked` carries two different endings under one name, which is F4 and
+        wants a split, not a gate.
+        """
+        if not isinstance(args, dict) or not args:
+            return ""
+        fits = []
+        for other, spec in self.registry.items():
+            if other == name:
+                continue
+            try:
+                spec.args_model.model_validate(args)
+            except ValidationError:
+                continue
+            # ...AND the agent could actually call it right now. Fitting the
+            # schema is not the same as being permitted: `open_url` accepts a
+            # `url` from any state, and gate 4 refuses it on a page that has not
+            # been read.
+            #
+            # Measured, and it cost two tasks. The same suggestion that fixed T5
+            # (`reason` -> submit_form, six steps to two) pointed T4 at
+            # `open_url` after `read_page(url=...)` was refused. T4 took the
+            # suggestion, hit `write_before_read`, and ended `unterminated` -
+            # having scored `out_of_scope` three times out of three before the
+            # suggestion existed. A hint that names a tool the gates will refuse
+            # does not merely fail to help; it spends the agent's remaining turns.
+            try:
+                self._coheres(other, spec)
+            except GateError:
+                continue
+            fits.append(other)
+        if not fits:
+            return ""
+        return (" Those arguments fit "
+                + " or ".join(sorted(fits)[:3]) + ".")
+
     async def dispatch(self, call: ToolCall):
         if not isinstance(call.name, str) or not isinstance(call.args, dict):
             return obs_err("malformed_call", "name must be a string, args an object"), None
@@ -189,7 +246,8 @@ class Dispatcher:
             f0 = e.errors()[0]
             return obs_err("schema_violation",
                            f"{'.'.join(str(x) for x in f0['loc'])}: {f0['msg']}",
-                           self._how_to_fix(call.name, spec)), spec.tier
+                           self._how_to_fix(call.name, spec)
+                           + self._did_you_mean(call.name, call.args)), spec.tier
         except GateError as e:
             return obs_err(e.code, e.msg, e.hint), spec.tier
         return await spec.fn(**clean), spec.tier

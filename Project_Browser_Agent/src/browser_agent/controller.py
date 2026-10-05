@@ -68,6 +68,10 @@ async def run_agent(client, dispatcher, registry, system, user_message,
                     max_steps=6, token_budget=20_000, deadline_s=60.0,
                     require_terminal_tool=True, _resume=None):
     run_id = uuid.uuid4().hex[:8]
+    # The dispatcher needs the goal to check a question against it: a `blocked`
+    # that repeats the goal is not a request for information. Set here rather
+    # than at construction so one agent can serve several goals.
+    dispatcher.goal = user_message
     transcript = [{"role": "user", "content": user_message}]
     trace = []
     resumes = 0
