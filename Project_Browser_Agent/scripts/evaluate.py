@@ -262,6 +262,7 @@ async def main():
                              # different shape crashes the report at the end of a
                              # long run - after the work, before the output.
                              "resumed_from": "-", "resolved": False,
+                             "no_reply": "", "degraded_by_reply": False,
                              "ended_by": "-", "evidence": 0, "support": None,
                              "goal_cov": 0.0, "gate_refusals": 0, "errors": [],
                              "answer": "", "steps": 0, "tokens": 0, "secs": 0.0,
@@ -290,21 +291,51 @@ async def main():
             # CORRECT reply, was the agent's question answerable at all? It does
             # not model how a real person would answer.
             resumed_from = None
+            no_reply, degraded = "", False
             if args.human_replies and awaits_human(r.stop_reason) \
                     and label in HUMAN_REPLIES:
                 act, text = HUMAN_REPLIES[label]
-                resumed_from = r.stop_reason
-                print(f"  human -> {act}: {text[:60]}", flush=True)
-                try:
+                # Which decisions this ending can take. A question takes an
+                # answer; a proposal takes approval or refusal.
+                takes = {"blocked": {"answer"},
+                         "pending_approval": {"approve", "deny"}}[r.stop_reason]
+                if act not in takes:
+                    # This WAS a `raise SystemExit`, on the reasoning that a
+                    # mismatch is a bug in HUMAN_REPLIES rather than an agent
+                    # outcome. The first run with a real model disproved that:
+                    # T5 is written to reach `pending_approval` and its reply is
+                    # `approve`; the agent ended `blocked` instead, and the
+                    # evaluation died on task two of four.
+                    #
+                    # The table was right. The agent stopped the wrong way, which
+                    # is an outcome and the most informative one in that run. So
+                    # it is recorded and the remaining tasks run - F4 again, in
+                    # code written after F4 was documented three times.
+                    #
+                    # The reply is NOT silently swapped for one that fits: that
+                    # would hide the very thing this row is reporting.
+                    no_reply = f"{r.stop_reason} does not take '{act}'"
+                    print(f"  no reply applies: {no_reply}", flush=True)
+                else:
+                    resumed_from = r.stop_reason
+                    print(f"  human -> {act}: {text[:60]}", flush=True)
                     r = await resume(client, disp, reg, system_for(reg), goal, r,
                                      Decision(action=act, text=text),
                                      max_steps=8, deadline_s=args.deadline,
                                      require_terminal_tool=not args.allow_prose_exit)
-                except ValueError as e:
-                    # A mismatch (approving a question, answering a proposal) is
-                    # a bug in HUMAN_REPLIES, not an agent outcome. Say so loudly
-                    # rather than recording it as a failed task.
-                    raise SystemExit(f"{label}: {e}")
+                    # A reply can make a run WORSE. T3 ends `blocked` on its own
+                    # - the correct judgement - and after a reply that does not
+                    # help ("I do not know either") it wrote prose twice and
+                    # ended `unterminated`: a guard ending, which is not a
+                    # judgement at all. The agent was right before it was helped.
+                    #
+                    # The outcome is NOT rewritten back to `blocked`. Hiding a
+                    # degradation to protect a score is the failure this project
+                    # documents five times over. It is named and counted instead.
+                    degraded = r.stop_reason in GUARD_REASONS
+                    if degraded:
+                        print(f"  the reply did not help: {resumed_from} -> "
+                              f"{r.stop_reason}", flush=True)
             secs = time.time() - t0
             await b.close()
 
@@ -321,9 +352,34 @@ async def main():
         # obs["terminal"] alone reported True for exactly the runs this column
         # exists to catch. The trace entry's `tool` is the discriminator: a
         # control tool names itself, a fall-through leaves the name empty.
+        # WHAT THE TASK EXPECTS AFTER A REPLY.
+        # T5 is written to reach `pending_approval`, and with --human-replies the
+        # run does not STOP there - a person approves and it ends `approved`.
+        # Scored against the unresumed expectation, a complete and correct
+        # interaction reads as a failure: `expected pending_approval, got
+        # approved, correct False`. That is the metric misreporting the agent,
+        # which is F5's family and the sixth instrument in this project to do it.
+        #
+        # Only the proposal path moves, and it moves mechanically: approve ends
+        # `approved`, deny ends `denied`. A question answered does NOT move the
+        # expectation - T3 is written to be unanswerable, so after a reply that
+        # does not help it should still arrive at `blocked`, and anything else is
+        # a real failure (it currently gives `unterminated`).
+        if resumed_from == "pending_approval" and expected == "pending_approval":
+            expected = {"approve": "approved", "deny": "denied"}[
+                HUMAN_REPLIES[label][0]]
+
         ended = next((t for t in r.trace if t["obs"].get("terminal")), None)
         ended_by = ended["tool"] if ended else None
-        terminal_by_tool = bool(ended and ended["tier"] == Tier.CONTROL.value)
+        # ANY tool that named itself, not only a CONTROL one. The bug this
+        # column exists to catch is the fall-through exit, which synthesises a
+        # terminal observation with `tool: None`; the tool NAME is what
+        # discriminates, and it always was. Keying on the CONTROL tier was a
+        # stricter proxy that held only while control tools were the sole way to
+        # end - and `submit_form` (CONSEQUENTIAL) now ends runs at
+        # `pending_approval`, so the proxy would mark the project's newest
+        # correct ending as one the agent fell into.
+        terminal_by_tool = bool(ended and ended["tool"])
         rows.append({
             "task": label, "rep": rep, "goal": goal,
             "expected": expected, "got": r.stop_reason,
@@ -335,6 +391,13 @@ async def main():
             "via_tool": terminal_by_tool,                  # a CONTROL tool ended it
             "resumed_from": resumed_from or "-",            # the stop a person answered
             "resolved": resolved_by_one_reply(r),           # ... and did one reply finish it
+            # Set when the run stopped to address a person in a way the scripted
+            # reply does not fit - i.e. it reached the wrong human-facing ending.
+            "no_reply": no_reply,
+            # True when a human reply turned a human-facing ending into a guard
+            # ending. The interaction layer can subtract, and this is the column
+            # that says so.
+            "degraded_by_reply": degraded,
             "ended_by": ended_by or "-",                   # WHICH one, or "-" for fall-through
             "evidence": len(r.evidence),                   # ACCURACY (a citation EXISTS)
             # ... and how much of the answer is actually IN what was observed.
@@ -432,6 +495,18 @@ async def main():
                 mark = "resolved" if r["resolved"] else "still stopped"
                 print(f"  {r['task']:<18} {r['resumed_from']:<18} -> "
                       f"{r['got']:<16} {mark}")
+        # A run that stopped for a person in a way no scripted reply fits is not
+        # a crash and not a resolved run. It is the agent reaching the wrong
+        # human-facing ending, and it belongs in the report rather than in a
+        # traceback.
+        for r in [r for r in rows if r.get("no_reply")]:
+            print(f"  {r['task']:<18} no reply applied: {r['no_reply']}")
+        worse = [r for r in rows if r.get("degraded_by_reply")]
+        if worse:
+            print(f"\nmade WORSE by a reply: {len(worse)}   "
+                  f"a human-facing ending became a guard ending")
+            for r in worse:
+                print(f"  {r['task']:<18} {r['resumed_from']:<18} -> {r['got']}")
 
     # A guard ending is not a judgement the agent made - it is a refusal it
     # failed to act on twice. Counted separately because `ungrounded` spent a

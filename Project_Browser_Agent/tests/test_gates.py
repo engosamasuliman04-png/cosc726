@@ -173,3 +173,53 @@ def test_no_gate_can_be_added_without_a_hint():
     missing = [ast.get_source_segment(src.read_text(), n)[:40]
                for n in raises if len(n.args) < 3]
     assert not missing, f"GateError raised without a hint: {missing}"
+
+
+async def test_a_refusal_names_the_tool_the_arguments_actually_fit():
+    """Measured every run of T5: the agent called read_page(reason=...).
+    `reason` is submit_form's argument, so the agent had the right argument and
+    the wrong tool name - it was trying to propose and could not spell the call.
+    "read_page takes no arguments" is true and tells it nothing."""
+    _, _, disp = build_agent(FakePage("https://example.com/"), ALLOW,
+                             allow_consequential=True)   # T5's setting
+    obs, _ = await disp.dispatch(ToolCall("read_page", {"reason": "confirm purchase"}))
+    assert obs["error"] == "schema_violation"
+    assert "submit_form" in obs["hint"]
+
+async def test_no_suggestion_when_nothing_else_fits(agent):
+    """Silence beats a wrong pointer: the hint only names a tool the arguments
+    actually validate against."""
+    _, _, disp = agent
+    obs, _ = await disp.dispatch(ToolCall("read_page", {"nonsense": 1}))
+    assert "fit" not in obs["hint"]
+
+
+async def test_a_suggestion_names_only_a_tool_that_could_run_now(agent):
+    """Fitting the schema is not the same as being permitted. `url` fits
+    open_url from any state, and gate 4 refuses open_url on an unread page.
+
+    Measured: that suggestion cost T4 two runs. It had scored out_of_scope 3/3
+    before the hint existed; afterwards it followed the pointer, hit
+    write_before_read, and ran out of turns.
+    """
+    tools, _, disp = agent
+    obs, _ = await disp.dispatch(ToolCall("read_page", {"url": "https://iana.org/"}))
+    assert obs["error"] == "schema_violation"
+    assert "open_url" not in obs["hint"]          # unread page: gate 4 refuses it
+
+    await disp.dispatch(ToolCall("read_page", {}))   # now the page is observed
+    obs, _ = await disp.dispatch(ToolCall("read_page", {"url": "https://iana.org/"}))
+    assert "open_url" in obs["hint"]
+
+async def test_a_consequential_tool_is_not_suggested_without_approval(agent):
+    """submit_form fits `reason`, and gate 4 refuses it unless this agent may
+    propose. The suggestion follows the same permission, so T5 keeps its hint
+    and a task that cannot propose is not sent toward one."""
+    _, _, disp = agent                      # allow_consequential=False
+    obs, _ = await disp.dispatch(ToolCall("read_page", {"reason": "confirm purchase"}))
+    assert "submit_form" not in obs["hint"]
+
+    _, _, allowed = build_agent(FakePage("https://example.com/"), ALLOW,
+                                allow_consequential=True)
+    obs, _ = await allowed.dispatch(ToolCall("read_page", {"reason": "confirm purchase"}))
+    assert "submit_form" in obs["hint"]

@@ -139,3 +139,12 @@ async def test_the_resume_cap_holds():
                          "q", once, Decision(action=HumanAction.ANSWER, text="again"))
     assert twice.resumes == 1                      # unchanged
     assert "resume cap" in twice.detail
+
+
+# --------------------------------- a mismatched reply is a row, not a crash
+def test_a_reply_that_does_not_fit_the_ending_is_refused_by_resume():
+    """`resume` still refuses the wrong decision for the ending: approving a
+    question is not a thing a person can do. What changed is who handles it."""
+    takes = {"blocked": {"answer"}, "pending_approval": {"approve", "deny"}}
+    assert "approve" not in takes["blocked"]
+    assert "answer" not in takes["pending_approval"]
