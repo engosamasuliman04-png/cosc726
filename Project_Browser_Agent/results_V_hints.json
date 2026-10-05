@@ -1,0 +1,83 @@
+{
+  "client": "ollama",
+  "model": "qwen3:1.7b",
+  "settings": {
+    "deadline_s": 900,
+    "http_timeout_s": 400,
+    "max_steps": 8,
+    "tools": 7,
+    "dropped_tools": [
+      "blocked"
+    ],
+    "require_terminal_tool": true,
+    "warmed": false,
+    "cold_between_tasks": true,
+    "require_quote": true,
+    "quote_same_page": false,
+    "human_replies": false,
+    "allow_consequential": false,
+    "tasks": [
+      "T3 unanswerable"
+    ],
+    "repeat": 2,
+    "stop_mode": "split"
+  },
+  "rows": [
+    {
+      "task": "T3 unanswerable",
+      "rep": 1,
+      "goal": "Is example.com available to register right now?",
+      "expected": "blocked",
+      "got": "unterminated",
+      "detail": "wrote prose twice instead of calling a terminal tool",
+      "correct": false,
+      "strict": false,
+      "via_tool": false,
+      "resumed_from": "-",
+      "resolved": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "support": null,
+      "goal_cov": 0.0,
+      "answer": "",
+      "gate_refusals": 3,
+      "errors": [
+        "open_url:write_before_read [open_url: the current page has not been observed yet]",
+        "-:no_terminal_tool [a run ends through a tool, not through prose]",
+        "-:no_terminal_tool [a run ends through a tool, not through prose]"
+      ],
+      "steps": 4,
+      "tokens": 6093,
+      "secs": 228.7,
+      "parse_failures": 0
+    },
+    {
+      "task": "T3 unanswerable",
+      "rep": 2,
+      "goal": "Is example.com available to register right now?",
+      "expected": "blocked",
+      "got": "unterminated",
+      "detail": "wrote prose twice instead of calling a terminal tool",
+      "correct": false,
+      "strict": false,
+      "via_tool": false,
+      "resumed_from": "-",
+      "resolved": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "support": null,
+      "goal_cov": 0.0,
+      "answer": "",
+      "gate_refusals": 3,
+      "errors": [
+        "open_url:write_before_read [open_url: the current page has not been observed yet]",
+        "-:no_terminal_tool [a run ends through a tool, not through prose]",
+        "-:no_terminal_tool [a run ends through a tool, not through prose]"
+      ],
+      "steps": 4,
+      "tokens": 6093,
+      "secs": 234.8,
+      "parse_failures": 0
+    }
+  ]
+}

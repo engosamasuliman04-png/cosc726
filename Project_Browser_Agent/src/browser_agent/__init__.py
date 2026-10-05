@@ -8,7 +8,8 @@
 from .tiers import (
     Tier, NoArgs, OpenUrlArgs, ClickLinkArgs, SubmitFormArgs,
     FinishArgs, BlockedArgs, OutOfScopeArgs, StopArgs, StopReason,
-    TERMINAL_REASONS,
+    TERMINAL_REASONS, HUMAN_REASONS, GUARD_REASONS, awaits_human,
+    Decision, HumanAction,
     CAP_REASONS, is_capped,
 )
 from .tools import BrowserTools, obs_err
@@ -20,12 +21,14 @@ from .clients import (
 )
 from .controller import (
     RunResult, run_agent, report, build_agent, answer_support,
+    resume, resolved_by_one_reply,
 )
 
 __all__ = [
     "Tier", "NoArgs", "OpenUrlArgs", "ClickLinkArgs", "SubmitFormArgs",
     "FinishArgs", "BlockedArgs", "OutOfScopeArgs", "StopArgs",
-    "StopReason", "TERMINAL_REASONS",
+    "StopReason", "TERMINAL_REASONS", "HUMAN_REASONS", "GUARD_REASONS", "awaits_human",
+    "Decision", "HumanAction",
     "CAP_REASONS", "is_capped",
     "BrowserTools", "obs_err",
     "ToolSpec", "ToolCall", "build_registry",
@@ -33,4 +36,5 @@ __all__ = [
     "SYSTEM", "system_for",
     "Usage", "Reply", "ScriptedClient", "HeuristicClient", "keywords", "goal_coverage",
     "RunResult", "run_agent", "report", "build_agent", "answer_support",
+    "resume", "resolved_by_one_reply",
 ]

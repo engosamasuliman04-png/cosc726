@@ -92,10 +92,33 @@ async def test_ungrounded_answer_is_refused():
     would be accepted as `complete` and `finish`'s mandatory evidence_url bypassed.
 
     This is what the first real-model run actually did.
+
+    The ending is `ungrounded`, NOT `blocked`. The two were one name until an
+    ablation that removed the `blocked` TOOL still reported T3 as `blocked`:
+    the guard was answering in the tool's voice, and the loose metric scored a
+    silenced agent exactly like one that had judged the task unanswerable.
     """
     res = await run([R(t="It reserves example.com."), R(t="I already told you.")])
-    assert res.stop_reason == "blocked"
+    assert res.stop_reason == "ungrounded"
     assert res.trace[0]["obs"]["error"] == "ungrounded_answer"
+
+async def test_a_silenced_agent_and_a_refusing_agent_end_differently():
+    """The regression that found this. Run T dropped the `blocked` TOOL and T3
+    still reported `blocked` - twice - and `correct` scored both as success.
+
+    One of these agents judged the task unanswerable and spent a call saying so.
+    The other invented an answer twice and was stopped. Reading them as the same
+    outcome is how an ablation can remove a tool and still appear to measure it.
+    """
+    chose = await run([R("blocked", {"question": "Which page do I start from?"})])
+    silenced = await run([R(t="It reserves example.com."), R(t="Still true.")])
+    assert chose.stop_reason == "blocked"
+    assert silenced.stop_reason == "ungrounded"
+    assert chose.stop_reason != silenced.stop_reason
+
+    # ... and the trace says which mechanism, not just which name.
+    assert chose.trace[0]["tool"] == "blocked"
+    assert silenced.trace[0]["tool"] is None
 
 async def test_model_can_correct_itself():
     """A refusal is handed back as a structured observation, not a hard stop."""

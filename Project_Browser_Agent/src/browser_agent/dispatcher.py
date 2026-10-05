@@ -17,8 +17,21 @@ from .tiers import Tier
 from .tools import BrowserTools, obs_err
 
 class GateError(Exception):
-    def __init__(self, code, msg):
-        self.code, self.msg = code, msg
+    """A refusal, and what to do about it.
+
+    `hint` was added after a measured failure. F11 fixed the hint on
+    `schema_violation` and left the ten gate refusals naming the problem and not
+    the fix. The consequence, three runs out of three: told
+    `write_before_read: the current page has not been observed yet`, the agent
+    retried `open_url`, then answered in prose twice and was stopped - without
+    ever calling `read_page`, the one tool that would have cleared the gate. The
+    message was accurate and unusable.
+
+    Every refusal here names a next call. A gate that only says no spends a turn
+    and teaches nothing.
+    """
+    def __init__(self, code, msg, hint=""):
+        self.code, self.msg, self.hint = code, msg, hint
         super().__init__(msg)
 
 
@@ -39,10 +52,14 @@ class Dispatcher:
             links = self.t.links_here()
             if links is None:
                 raise GateError("no_links_known",
-                                "list_links has not been called on THIS page yet")
+                                "list_links has not been called on THIS page yet",
+                                "Call list_links() to see the links and their "
+                                "indices, then click_link(index).")
             if args["index"] >= len(links):
                 raise GateError("index_out_of_range",
-                                f"index {args['index']} but this page has {len(links)} links")
+                                f"index {args['index']} but this page has {len(links)} links",
+                                f"Valid indices are 0 to {len(links) - 1}. Call "
+                                "list_links() again if you need to see them.")
         # `stop` only claims an answer when reason_type is 'answered'; the other
         # two reasons cite nothing by nature, so the quote rule cannot apply.
         claims_answer = name == "finish" or (
@@ -61,7 +78,9 @@ class Dispatcher:
             if not q:
                 raise GateError("quote_missing",
                                 "finish needs evidence_quote: the words from the "
-                                "page that support this answer")
+                                "page that support this answer",
+                                "Copy a sentence from a read_page result into "
+                                "evidence_quote, exactly as it appeared.")
             if self.quote_same_page:
                 # The claim is not "this sentence was seen somewhere", it is
                 # "this sentence is on THAT url". Checked against the merged text
@@ -73,25 +92,36 @@ class Dispatcher:
                 if not page_text:
                     raise GateError("evidence_url_not_observed",
                                     f"no tool result came from {url!r}; "
-                                    f"pages read so far: {self.t.observed_urls()}")
+                                    f"pages read so far: {self.t.observed_urls()}",
+                                    "Cite one of the pages listed above, or "
+                                    "open_url then read_page that one first.")
                 if q not in page_text:
                     raise GateError("quote_not_on_cited_page",
                                     f"{args['evidence_quote'][:60]!r} is not in the "
-                                    f"text of {url}; cite the page the words are on")
+                                    f"text of {url}; cite the page the words are on",
+                                    "Set evidence_url to the page you copied the "
+                                    "quote from, or quote the page you cited.")
             elif q not in self.t.seen_text():
                 raise GateError("quote_not_observed",
                                 f"no tool result contains {args['evidence_quote'][:60]!r}; "
-                                "quote the page exactly, do not paraphrase")
+                                "quote the page exactly, do not paraphrase",
+                                "Call read_page() and copy words from its result "
+                                "verbatim. Do not write about the page.")
         if name == "open_url":
             d = BrowserTools.domain(args["url"])
             if not any(d == a or d.endswith("." + a) for a in self.t.allowed_domains):
                 raise GateError("domain_not_allowed",
-                                f"{d} is outside {sorted(self.t.allowed_domains)}")
+                                f"{d} is outside {sorted(self.t.allowed_domains)}",
+                                f"Only {sorted(self.t.allowed_domains)} can be "
+                                "opened. If the answer needs another site, this "
+                                "task cannot be done from here - say so.")
 
     def _coheres(self, name, spec):
         if spec.tier is Tier.CONSEQUENTIAL and not self.allow_consequential:
             raise GateError("requires_human_approval",
-                            f"{name} is CONSEQUENTIAL; this agent may only propose")
+                            f"{name} is CONSEQUENTIAL; this agent may only propose",
+                            f"You cannot perform {name}. Either propose it and "
+                            "stop, or end the run through a control tool.")
         # EVERY write-tier call, not just click_link. The prompt has always said
         # to read a new page first; this gate has guarded one of the two WRITE
         # tools since it was written, and the first real-model run walked straight
@@ -103,7 +133,9 @@ class Dispatcher:
         # one: the agent is acting on a page it has not looked at.
         if spec.tier is Tier.WRITE and not self.t.read_here():
             raise GateError("write_before_read",
-                            f"{name}: the current page has not been observed yet")
+                            f"{name}: the current page has not been observed yet",
+                            "Call read_page() with no arguments first. It is the "
+                            f"only call that clears this gate for {name}.")
 
     @staticmethod
     def _how_to_fix(name, spec) -> str:
@@ -159,5 +191,5 @@ class Dispatcher:
                            f"{'.'.join(str(x) for x in f0['loc'])}: {f0['msg']}",
                            self._how_to_fix(call.name, spec)), spec.tier
         except GateError as e:
-            return obs_err(e.code, e.msg), spec.tier
+            return obs_err(e.code, e.msg, e.hint), spec.tier
         return await spec.fn(**clean), spec.tier

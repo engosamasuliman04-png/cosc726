@@ -38,7 +38,8 @@ from typing import Optional
 from .clients import Reply, Usage, goal_coverage
 from .dispatcher import Dispatcher
 from .registry import ToolCall, build_registry
-from .tiers import TERMINAL_REASONS, FinishArgs, Tier
+from .tiers import (HUMAN_REASONS, TERMINAL_REASONS, Decision, FinishArgs,
+                    HumanAction, Tier, awaits_human)
 from .tools import BrowserTools, obs_err
 
 @dataclass
@@ -49,6 +50,7 @@ class RunResult:
     max_steps: int
     transcript: list = field(default_factory=list)
     trace: list = field(default_factory=list)
+    resumes: int = 0           # how many human decisions this run has consumed
 
     # derived - never stored twice
     @property
@@ -64,18 +66,30 @@ class RunResult:
 
 async def run_agent(client, dispatcher, registry, system, user_message,
                     max_steps=6, token_budget=20_000, deadline_s=60.0,
-                    require_terminal_tool=True):
+                    require_terminal_tool=True, _resume=None):
     run_id = uuid.uuid4().hex[:8]
     transcript = [{"role": "user", "content": user_message}]
     trace = []
+    resumes = 0
     started, last_sig = time.time(), None
     ungrounded = unterminated = 0
 
+    if _resume is not None:
+        # Continuing a run that stopped to address a person. The prior transcript
+        # and trace are carried, so steps, tokens and evidence keep accumulating -
+        # a resumed run is ONE run, not two. `resume()` below is the public door;
+        # this parameter is how it gets in.
+        prior, obs = _resume
+        run_id, transcript, trace = prior.run_id, prior.transcript, prior.trace
+        resumes = prior.resumes + 1
+        transcript.append({"role": "tool", "name": "human", "content": obs})
+
     def stop(reason, detail):
         assert reason in TERMINAL_REASONS, reason
-        return RunResult(run_id, reason, detail, max_steps, transcript, trace)
+        return RunResult(run_id, reason, detail, max_steps, transcript, trace,
+                         resumes)
 
-    for step in range(1, max_steps + 1):
+    for step in range(len(trace) + 1, max_steps + 1):
         t0 = time.time()
         reply = client.complete(system, transcript, registry)
         tokens = reply.usage.total
@@ -106,7 +120,16 @@ async def run_agent(client, dispatcher, registry, system, user_message,
                               "tier": None, "obs": obs, "tokens": tokens,
                               "latency_ms": int((time.time() - t0) * 1000)})
                 if ungrounded >= 2:
-                    return stop("blocked", "answered twice without observing anything")
+                    # NOT `blocked`. That name was borrowed here and it made the
+                    # guard indistinguishable from the tool: the ablation run that
+                    # DROPPED the `blocked` tool still reported T3 as `blocked`,
+                    # twice, and the loose metric scored both as correct. An agent
+                    # that chose to say "I cannot know this" and an agent that was
+                    # silenced after two inventions are not the same outcome, and
+                    # one name for both is F4 all over again - a general name
+                    # discarding the specific one that mattered.
+                    return stop("ungrounded",
+                                "answered twice without observing anything")
                 continue                       # hand it back and let the model correct
 
             # TERMINATION GUARD. `<loop_rules>` says to end with finish, blocked or
@@ -172,6 +195,74 @@ async def run_agent(client, dispatcher, registry, system, user_message,
             return stop(obs["terminal"], obs.get("detail", ""))
 
     return stop("capped_steps", f"turn cap {max_steps} reached")
+
+
+async def resume(client, dispatcher, registry, system, user_message,
+                 res: RunResult, decision: Decision, max_resumes=1, **kw):
+    """Hand a person's decision back to a run that stopped to address them.
+
+    Two of the nine stop reasons are addressed to a person, and until now both
+    were dead ends. `blocked` asked a question nobody could answer; and
+    `pending_approval` - a stop reason declared on the first day, enforced by
+    `assert`, with a tool that produces it - was never reached in any run from A
+    to S, because no evaluation ever passed `allow_consequential`. A named exit
+    with no path to it is F1 again: a mechanism that exists and cannot be reached.
+
+    Three decisions, two shapes:
+
+      answer  -> the loop continues. This is the only one that re-invokes the
+                 model, and the only one worth measuring: it asks whether the
+                 agent's question was answerable at all.
+      approve -> ends `approved`. NOTHING is submitted; see tiers.py.
+      deny    -> ends `denied`, and the agent is NOT re-invoked. A refused
+                 proposal that comes back reworded is exactly what the
+                 CONSEQUENTIAL tier exists to stop, so refusal is a boundary and
+                 not the opening of a negotiation.
+
+    `max_resumes` is 1 to start. A higher cap is a measurement, not a default:
+    with one resume, "did a single human reply resolve it?" has a clean answer.
+    """
+    if not awaits_human(res.stop_reason):
+        raise ValueError(f"{res.stop_reason} is not addressed to a person; "
+                         f"only {sorted(HUMAN_REASONS)} can be resumed")
+    if res.resumes >= max_resumes:
+        return RunResult(res.run_id, res.stop_reason,
+                         f"{res.detail} [resume cap {max_resumes} reached]",
+                         res.max_steps, res.transcript, res.trace, res.resumes)
+
+    act = decision.action
+    if res.stop_reason == "pending_approval":
+        if act is HumanAction.ANSWER:
+            raise ValueError("a proposal takes approve or deny, not answer")
+        reason = "approved" if act is HumanAction.APPROVE else "denied"
+        detail = decision.text or f"human {act.value}d the proposal"
+        res.transcript.append({"role": "tool", "name": "human",
+                               "content": {"ok": True, "decision": act.value,
+                                           "detail": detail}})
+        return RunResult(res.run_id, reason, detail, res.max_steps,
+                         res.transcript, res.trace, res.resumes + 1)
+
+    # blocked: only an answer moves it. approve/deny answer nothing.
+    if act is not HumanAction.ANSWER:
+        raise ValueError("a blocked question takes answer, not approve/deny")
+    obs = {"ok": True, "source": "human", "detail": decision.text,
+           "state_changed": False,
+           "hint": "This answers the question you asked. Continue, and end "
+                   "through a tool."}
+    return await run_agent(client, dispatcher, registry, system, user_message,
+                           _resume=(res, obs), **kw)
+
+
+def resolved_by_one_reply(res: RunResult) -> bool:
+    """Did one human reply turn a stop into a finish?
+
+    The metric the interaction layer is actually about. Not "did the loop
+    continue" - it always can - but whether the question the agent asked was
+    answerable. "What is the form's URL?" is answerable in a line. "Is this
+    domain available?" is not a request for information from the user at all; it
+    is an admission of a limit, and no reply resolves it.
+    """
+    return res.resumes > 0 and res.stop_reason in {"complete", "approved"}
 
 
 def answer_support(res: RunResult):

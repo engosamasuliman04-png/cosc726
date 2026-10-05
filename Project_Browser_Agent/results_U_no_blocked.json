@@ -1,0 +1,117 @@
+{
+  "client": "ollama",
+  "model": "qwen3:1.7b",
+  "settings": {
+    "deadline_s": 900,
+    "http_timeout_s": 400,
+    "max_steps": 8,
+    "tools": 7,
+    "dropped_tools": [
+      "blocked"
+    ],
+    "require_terminal_tool": true,
+    "warmed": false,
+    "cold_between_tasks": true,
+    "require_quote": true,
+    "quote_same_page": false,
+    "human_replies": false,
+    "allow_consequential": false,
+    "tasks": [
+      "T3 unanswerable"
+    ],
+    "repeat": 3,
+    "stop_mode": "split"
+  },
+  "rows": [
+    {
+      "task": "T3 unanswerable",
+      "rep": 1,
+      "goal": "Is example.com available to register right now?",
+      "expected": "blocked",
+      "got": "ungrounded",
+      "detail": "answered twice without observing anything",
+      "correct": false,
+      "strict": false,
+      "via_tool": false,
+      "resumed_from": "-",
+      "resolved": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "support": null,
+      "goal_cov": 0.0,
+      "answer": "",
+      "gate_refusals": 5,
+      "errors": [
+        "open_url:write_before_read [open_url: the current page has not been observed yet]",
+        "list_links:schema_violation [url: Extra inputs are not permitted]",
+        "open_url:write_before_read [open_url: the current page has not been observed yet]",
+        "-:ungrounded_answer [you answered before any tool returned anything]",
+        "-:ungrounded_answer [you answered before any tool returned anything]"
+      ],
+      "steps": 5,
+      "tokens": 6524,
+      "secs": 268.7,
+      "parse_failures": 0
+    },
+    {
+      "task": "T3 unanswerable",
+      "rep": 2,
+      "goal": "Is example.com available to register right now?",
+      "expected": "blocked",
+      "got": "ungrounded",
+      "detail": "answered twice without observing anything",
+      "correct": false,
+      "strict": false,
+      "via_tool": false,
+      "resumed_from": "-",
+      "resolved": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "support": null,
+      "goal_cov": 0.0,
+      "answer": "",
+      "gate_refusals": 5,
+      "errors": [
+        "open_url:write_before_read [open_url: the current page has not been observed yet]",
+        "list_links:schema_violation [url: Extra inputs are not permitted]",
+        "open_url:write_before_read [open_url: the current page has not been observed yet]",
+        "-:ungrounded_answer [you answered before any tool returned anything]",
+        "-:ungrounded_answer [you answered before any tool returned anything]"
+      ],
+      "steps": 5,
+      "tokens": 6524,
+      "secs": 248.2,
+      "parse_failures": 0
+    },
+    {
+      "task": "T3 unanswerable",
+      "rep": 3,
+      "goal": "Is example.com available to register right now?",
+      "expected": "blocked",
+      "got": "ungrounded",
+      "detail": "answered twice without observing anything",
+      "correct": false,
+      "strict": false,
+      "via_tool": false,
+      "resumed_from": "-",
+      "resolved": false,
+      "ended_by": "-",
+      "evidence": 0,
+      "support": null,
+      "goal_cov": 0.0,
+      "answer": "",
+      "gate_refusals": 5,
+      "errors": [
+        "open_url:write_before_read [open_url: the current page has not been observed yet]",
+        "list_links:schema_violation [url: Extra inputs are not permitted]",
+        "open_url:write_before_read [open_url: the current page has not been observed yet]",
+        "-:ungrounded_answer [you answered before any tool returned anything]",
+        "-:ungrounded_answer [you answered before any tool returned anything]"
+      ],
+      "steps": 5,
+      "tokens": 6524,
+      "secs": 245.9,
+      "parse_failures": 0
+    }
+  ]
+}
