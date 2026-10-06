@@ -168,3 +168,17 @@ async def test_full_run_on_the_native_path():
     assert c.parse_failures == 0
     assert len(res.evidence) == 1
     assert all(t_["obs"].get("ok") for t_ in res.trace)
+
+
+def test_temperature_is_whatever_the_caller_asked_for():
+    """0 was hard-coded, which is right for comparing two configurations and
+    wrong for an attack rate: greedy decoding never consults the seed, so three
+    "attempts" came back with identical token counts under the flag added to
+    stop exactly that."""
+    t = FakeTransport(["completion", "tools"], [prose("x")])
+    OllamaBackend("fake", t, temperature=0.7).chat([{"role": "user", "content": "hi"}])
+    assert t.seen_payload["options"]["temperature"] == 0.7
+
+    t = FakeTransport(["completion", "tools"], [prose("x")])
+    OllamaBackend("fake", t).chat([{"role": "user", "content": "hi"}])
+    assert t.seen_payload["options"]["temperature"] == 0.0     # still the default

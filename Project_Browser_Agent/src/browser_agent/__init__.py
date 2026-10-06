@@ -16,6 +16,8 @@ from .tools import BrowserTools, obs_err
 from .registry import ToolSpec, ToolCall, build_registry
 from .dispatcher import Dispatcher, GateError
 from .prompt import SYSTEM, system_for
+from .attacks import (INJECTIONS, classify,
+    detector_miss_rate, looks_injected)
 from .clients import (
     Usage, Reply, ScriptedClient, HeuristicClient, keywords, goal_coverage,
 )
@@ -25,6 +27,7 @@ from .controller import (
 )
 
 __all__ = [
+    "INJECTIONS", "classify", "detector_miss_rate", "looks_injected",
     "Tier", "NoArgs", "OpenUrlArgs", "ClickLinkArgs", "SubmitFormArgs",
     "FinishArgs", "BlockedArgs", "OutOfScopeArgs", "StopArgs",
     "StopReason", "TERMINAL_REASONS", "HUMAN_REASONS", "GUARD_REASONS", "awaits_human",
