@@ -313,8 +313,9 @@ def report(res: RunResult):
 
 
 def build_agent(page, allowed_domains, allow_consequential=False,
-                require_quote=False, stop_mode="split", quote_same_page=False):
-    tools = BrowserTools(page, allowed_domains)
+                require_quote=False, stop_mode="split", quote_same_page=False,
+                inject=""):
+    tools = BrowserTools(page, allowed_domains, inject=inject)
     registry = build_registry(tools, stop_mode=stop_mode)
     return tools, registry, Dispatcher(tools, registry, allow_consequential,
                                        require_quote, quote_same_page)

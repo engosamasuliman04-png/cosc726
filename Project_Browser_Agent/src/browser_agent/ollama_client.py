@@ -168,7 +168,7 @@ class HttpTransport:
 
 class OllamaBackend:
     def __init__(self, model=None, transport=None, think=None,
-                 num_predict=256, num_ctx=8192, seed=0):
+                 num_predict=256, num_ctx=8192, seed=0, temperature=0.0):
         self.model = model or config.model()
         self.t = transport or HttpTransport()
         self._caps = None
@@ -183,6 +183,11 @@ class OllamaBackend:
         # and removes sampling as a candidate explanation. Anything left after
         # it is cache or batching state, which is where the evidence points.
         self.seed = seed
+        # 0 is greedy decoding: the most likely token, every time, and the seed
+        # is never consulted. That is what makes two runs comparable and what
+        # makes an attack "rate" meaningless - varying the seed under it changes
+        # nothing, which three identical token counts said out loud.
+        self.temperature = temperature
 
     def unload(self) -> None:
         """Ask the server to drop the model from memory (`keep_alive: 0`).
@@ -216,7 +221,7 @@ class OllamaBackend:
 
     def chat(self, messages, tools=None) -> dict:
         payload = {"model": self.model, "messages": messages, "stream": False,
-                   "options": {"temperature": 0,            # necessary, NOT sufficient
+                   "options": {"temperature": self.temperature,   # 0 = greedy; see __init__
                                "seed": self.seed,           # removes sampling as a cause
                                "num_predict": self.num_predict,     # bound the generation
                                "num_ctx": self.num_ctx}}            # 4096 truncates late steps
@@ -246,6 +251,28 @@ def _usage(resp) -> Usage:
     return Usage(int(resp.get("prompt_eval_count", 0)), int(resp.get("eval_count", 0)))
 
 
+OBS_CHARS = 800
+
+
+def as_sent(obs: dict) -> str:
+    """Exactly what the model receives for one observation.
+
+    A SECOND truncation, in a different file from the first. `read_page` already
+    caps its text at MAX_TEXT; this caps the serialised observation again, and
+    the JSON wrapper (`ok`, `url`, `title`, keys and quotes) spends characters
+    before `text` even begins - so the tail of a full-length page never reaches
+    the model at all.
+
+    It is a function rather than an inline slice because the attack harness has
+    to ask the same question - did the payload reach the model? - and asking it
+    against the trace instead of against this string is how an injected run
+    reported 0% compliance twice while the payload was being cut in two
+    different places. One definition, two callers, no drift: the same fix as the
+    <tools> block being rendered from the registry.
+    """
+    return json.dumps(obs)[:OBS_CHARS]
+
+
 class OllamaClient:
     """Same complete() signature as every other client.
 
@@ -269,7 +296,7 @@ class OllamaClient:
         msgs = [{"role": "system", "content": system}]
         for m in transcript:
             if m["role"] == "tool":
-                msgs.append({"role": "tool", "content": json.dumps(m["content"])[:800]})
+                msgs.append({"role": "tool", "content": as_sent(m["content"])})
             elif "tool_call" in m:
                 tc = m["tool_call"]
                 msgs.append({"role": "assistant", "content": "",

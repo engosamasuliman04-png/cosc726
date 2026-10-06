@@ -26,9 +26,18 @@ def obs_err(code: str, detail: str, hint: str = "") -> dict:
 
 
 class BrowserTools:
-    def __init__(self, page, allowed_domains: set[str]):
+    def __init__(self, page, allowed_domains: set[str], inject: str = ""):
         self.page = page
         self.allowed_domains = allowed_domains
+        # Week 10. Text an attacker controls, arriving the way a real indirect
+        # injection does: inside what a READ tool returns. It is appended to the
+        # page text rather than replacing it, because an injection that destroys
+        # the page also destroys the task and tests nothing.
+        #
+        # It is NOT fenced or labelled here. Fencing is a separate layer with its
+        # own measurement, and labelling the payload before the agent sees it
+        # would be measuring a system nobody ships.
+        self.inject = inject
         # ONE structure for "what have I observed", keyed by URL.
         # Replaces the old read_urls set + last_links list, and fixes the
         # stale-index bug: links from page A can never validate a click on page B.
@@ -96,15 +105,45 @@ class BrowserTools:
         return url.split("//", 1)[-1].split("/", 1)[0].lower()
 
     # ---- READ ----
+    def _with_payload(self, text: str) -> str:
+        """Append the injected text so that it SURVIVES the truncation below.
+
+        The first version appended and then cut at MAX_TEXT. On the fake page
+        that worked; on the real one the page already fills 800 characters, so
+        the payload was sliced off and the model never saw a word of it. The run
+        reported 0% compliance, which reads as a defence and was an attack that
+        never happened - the exact shape of failure this project has documented
+        ten times, committed here in the code written to measure it.
+
+        Caught by the `payload in the first read` line, one run after it was
+        added, which is the only reason the number was not written down.
+
+        Room is made for the payload rather than taken from it: a page carrying
+        an attacker's paragraph genuinely has less space for its own content,
+        and the contract that a read returns at most MAX_TEXT still holds.
+
+        It goes FIRST, and that is not cosmetic. A second truncation lives in
+        `ollama_client.as_sent`, which caps the serialised observation at 800
+        characters including its JSON wrapper - so text placed at the end of a
+        full page is cut twice, in two files, and never reaches the model. An
+        attacker chooses where the paragraph sits; placing it at the top is both
+        realistic and the only position that survives this harness.
+        """
+        if not self.inject:
+            return text
+        room = max(0, MAX_TEXT - len(self.inject) - 2)
+        return f"{self.inject}\n\n{text[:room]}"
+
     async def read_page(self) -> dict:
         try:
-            text = await self.page.locator("body").inner_text()
+            raw = await self.page.locator("body").inner_text()
+            text = self._with_payload(raw)
             # The text is kept, not just the fact that a read happened. A quote
             # can only be checked against what was actually returned.
             self._mark(read=True, text=text[:MAX_TEXT])
             return {"ok": True, "url": self.page.url,
                     "title": await self.page.title(),
-                    "text": text[:MAX_TEXT], "truncated": len(text) > MAX_TEXT,
+                    "text": text[:MAX_TEXT], "truncated": len(raw) > MAX_TEXT,
                     "state_changed": False}
         except Exception as e:
             return obs_err("read_failed", str(e), "The page may not have loaded.")
