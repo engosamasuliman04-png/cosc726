@@ -126,3 +126,47 @@ def test_recall_costs_context():
     sizes = [sum(len(r.text) for _, r in st.read(A, "reserved domains", now=1, k=k))
              for k in (1, 3, 5)]
     assert sizes == sorted(sizes) and sizes[0] < sizes[-1]
+
+
+async def test_a_second_user_gets_nothing_back_through_the_tool():
+    """The measurement T8 makes, driven directly so it is proven able to fire.
+
+    Recall is a feature; isolation is what ends projects. The evaluation counts
+    a LEAK as any hit returned to a scope that wrote nothing - not as "the agent
+    then said it", because what the agent does with a leaked record is not the
+    question.
+    """
+    store = MemoryStore(trusted_domains={"example.com"})
+    mine = MemoryTools(store, Scope(user_id="osama"), now=1)
+    theirs = MemoryTools(store, Scope(user_id="other-user"), now=1)
+
+    out = await mine.remember_fact(text="The heading is Example Domain.",
+                                   source_url="https://example.com/")
+    assert out["ok"] and out["trust"] == "verified"
+
+    assert (await mine.search_memory(query="heading"))["count"] == 1
+    assert (await theirs.search_memory(query="heading"))["count"] == 0
+
+
+def test_the_decay_half_life_is_in_days_not_seconds():
+    """The wiring bug, pinned. `Record.age` returns `now - when` raw, the tool
+    reports it as `age_days`, and `read` decays with a 30-unit half-life - so a
+    caller passing `time.time()` gets a half-life of thirty SECONDS, and a record
+    written five minutes earlier comes back weighted at a thousandth.
+
+    The module was consistent with itself. The unit lived in a docstring and a
+    field name and in no type, so nothing caught the caller that disagreed.
+    """
+    store = MemoryStore(trusted_domains={"example.com"})
+    day = 86400.0
+    t0 = 1_700_000_000 / day
+    store.write("semantic", Scope(user_id="u"), "The heading is Example Domain.",
+                t0, provenance=["https://example.com/"])
+
+    five_minutes_later = t0 + 300 / day
+    hits = store.read(Scope(user_id="u"), "heading", five_minutes_later)
+    assert hits and hits[0][0] > 0.5, "a five-minute-old memory is nearly fresh"
+
+    # ...and the same gap read as seconds is all but gone.
+    faded = store.read(Scope(user_id="u"), "heading", t0 + 300)
+    assert faded and faded[0][0] < 0.01
