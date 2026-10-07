@@ -16,7 +16,84 @@ async def run(script, start="https://example.com/", **kw):
     _, reg, disp = build_agent(FakePage(start), ALLOW, **{
         k: v for k, v in kw.items() if k == "allow_consequential"})
     loop_kw = {k: v for k, v in kw.items() if k != "allow_consequential"}
-    return await run_agent(ScriptedClient(script), disp, reg, SYSTEM, "q", **loop_kw)
+    return await run_agent(ScriptedClient(script), disp, reg, system_for(reg), "q", **loop_kw)
+
+async def test_the_unrendered_prompt_is_refused_rather_than_sent():
+    """`SYSTEM` carries `<<TOOLS>>` and `system_for()` fills it from the registry.
+    Two scripts passed the raw constant, so the model received a <tools> block
+    that was the literal placeholder and a rule saying "every run ends through a
+    terminal tool above" with nothing above it.
+
+    It did not crash: on the native path the schemas still arrive in the `tools`
+    array, so the run merely got worse - which is how it survived twenty-six
+    runs. The live run that exposed it read the page correctly, then wrote the
+    answer as prose twice and ended `unterminated` with the names of the three
+    terminal tools nowhere in its prompt.
+
+    A placeholder that nothing checks is a string. This makes it a failure.
+    """
+    _, reg, disp = build_agent(FakePage("https://example.com/"), ALLOW)
+    with pytest.raises(AssertionError, match="<<TOOLS>>"):
+        await run_agent(ScriptedClient([]), disp, reg, SYSTEM, "q")
+
+
+def test_the_rendered_prompt_names_every_registered_tool():
+    """The other half: the gap is closed only if what replaces the placeholder
+    is derived from the registry. A hand-written list would pass the assertion
+    above while advertising a tool that does not exist."""
+    _, reg, _ = build_agent(FakePage("https://example.com/"), ALLOW)
+    rendered = system_for(reg)
+    assert "<<TOOLS>>" not in rendered
+    for name in reg:
+        assert name in rendered
+
+
+async def test_the_step_watcher_sees_every_step_and_changes_nothing():
+    """`on_step` exists so a four-minute turn is not a silent terminal. It is a
+    watcher: it receives each trace entry after the step is complete and its
+    return value is discarded, so there is no path by which it can alter a run.
+
+    Both halves are asserted here. A watcher that misses a step would make the
+    display lie about what happened, and a watcher that could change an outcome
+    would make every measured run depend on whether anybody was looking.
+    """
+    seen = []
+    _, reg, disp = build_agent(FakePage("https://example.com/"), ALLOW)
+    script = [R("read_page", {}),
+              R("finish", {"answer": "Example Domain",
+                           "evidence_url": "https://example.com/"})]
+
+    def spy(entry):
+        seen.append(entry["tool"])
+        return "ignored"          # a return value must not mean anything
+
+    watched = await run_agent(ScriptedClient(list(script)), disp, reg,
+                              system_for(reg), "q", on_step=spy)
+    assert seen == ["read_page", "finish"]
+    assert len(seen) == len(watched.trace)
+
+    _, reg2, disp2 = build_agent(FakePage("https://example.com/"), ALLOW)
+    unwatched = await run_agent(ScriptedClient(list(script)), disp2, reg2,
+                                system_for(reg2), "q")
+    assert watched.stop_reason == unwatched.stop_reason
+    assert [t["tool"] for t in watched.trace] == [t["tool"] for t in unwatched.trace]
+    assert len(watched.evidence) == len(unwatched.evidence)
+
+
+async def test_a_watcher_that_raises_is_not_a_silent_failure():
+    """If the display breaks, the run must not pretend it finished. A watcher
+    swallowed here would be a bare `except` by another route - the mistake
+    `capabilities()` made, which reported "no tool calling" for a model that did
+    not exist."""
+    _, reg, disp = build_agent(FakePage("https://example.com/"), ALLOW)
+
+    def boom(entry):
+        raise RuntimeError("the display broke")
+
+    with pytest.raises(RuntimeError, match="the display broke"):
+        await run_agent(ScriptedClient([R("read_page", {})]), disp, reg,
+                        system_for(reg), "q", on_step=boom)
+
 
 async def test_complete_via_finish():
     res = await run([R("read_page", {}),
@@ -149,7 +226,7 @@ async def test_stop_maps_each_reason_to_its_own_terminal(reason_type, expected):
     if reason_type == "answered":
         args["evidence_url"] = "https://example.com/"
     res = await run_agent(ScriptedClient([R("read_page", {}), R("stop", args)]),
-                          disp, reg, SYSTEM, "q")
+                          disp, reg, system_for(reg), "q")
     assert res.stop_reason == expected
 
 async def test_an_invalid_reason_type_names_the_permitted_ones():
@@ -184,7 +261,7 @@ async def test_hybrid_keeps_finish_and_merges_only_the_refusals(reason_type, exp
     assert {"blocked", "out_of_scope"} & set(reg) == set()
     res = await run_agent(ScriptedClient([R("read_page", {}),
         R("stop", {"reason_type": reason_type, "detail": "because"})]),
-        disp, reg, SYSTEM, "q")
+        disp, reg, system_for(reg), "q")
     assert res.stop_reason == expected
 
 async def test_hybrid_stop_cannot_be_used_to_answer():
@@ -213,7 +290,7 @@ async def quoting(answer, quote):
     return await run_agent(ScriptedClient([
         R("read_page", {}),
         R("finish", {"answer": answer, "evidence_url": "https://example.com/",
-                     "evidence_quote": quote})]), disp, reg, SYSTEM, "q")
+                     "evidence_quote": quote})]), disp, reg, system_for(reg), "q")
 
 async def test_an_invented_quote_is_refused():
     """Run F's fabrication, reproduced: an answer that appears in no tool result,
@@ -252,7 +329,7 @@ async def two_pages_then_finish(url, quote, quote_same_page=True):
         R("open_url", {"url": "https://www.iana.org/help/example-domains"}),
         R("read_page", {}),
         R("finish", {"answer": "a", "evidence_url": url,
-                     "evidence_quote": quote})]), disp, reg, SYSTEM, "q",
+                     "evidence_quote": quote})]), disp, reg, system_for(reg), "q",
         max_steps=6)
 
 async def test_a_quote_from_another_page_passes_the_merged_check():
@@ -305,7 +382,7 @@ async def test_a_trailing_slash_does_not_invalidate_a_citation():
             R("finish", {"answer": "The heading is Example Domain.",
                          "evidence_url": url,
                          "evidence_quote": "Example Domain"})]),
-            disp, reg, SYSTEM, "q")
+            disp, reg, system_for(reg), "q")
         assert res.stop_reason == "complete", url
 
 # -------------------------------------------------- the termination guard
@@ -355,7 +432,7 @@ async def test_heuristic_baseline_reaches_the_goal():
     """
     goal = "Find information about example domains"
     _, reg, disp = build_agent(FakePage("https://example.com/"), ALLOW)
-    res = await run_agent(HeuristicClient(goal), disp, reg, SYSTEM, goal, max_steps=8)
+    res = await run_agent(HeuristicClient(goal), disp, reg, system_for(reg), goal, max_steps=8)
     assert res.stop_reason == "complete"
     assert res.tokens_used == 0
     assert "scored 0.00" in res.trace[2]["thought"]

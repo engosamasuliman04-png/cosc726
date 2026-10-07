@@ -25,6 +25,7 @@ from .controller import (
     RunResult, run_agent, report, build_agent, answer_support,
     resume, resolved_by_one_reply,
 )
+from .scoring import scorecard, independent_repeats, THREE
 
 __all__ = [
     "INJECTIONS", "classify", "detector_miss_rate", "looks_injected",
@@ -40,4 +41,5 @@ __all__ = [
     "Usage", "Reply", "ScriptedClient", "HeuristicClient", "keywords", "goal_coverage",
     "RunResult", "run_agent", "report", "build_agent", "answer_support",
     "resume", "resolved_by_one_reply",
+    "scorecard", "independent_repeats", "THREE",
 ]

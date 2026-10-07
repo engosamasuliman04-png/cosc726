@@ -66,7 +66,27 @@ class RunResult:
 
 async def run_agent(client, dispatcher, registry, system, user_message,
                     max_steps=6, token_budget=20_000, deadline_s=60.0,
-                    require_terminal_tool=True, _resume=None):
+                    require_terminal_tool=True, on_step=None, _resume=None):
+    """`on_step(entry)` is called with each trace entry as it is appended.
+
+    A watcher, not a participant: its return value is discarded and it is given
+    the entry AFTER the step is complete, so there is no path by which it can
+    change an outcome. It exists because a turn takes minutes on a local model
+    and a silent terminal is indistinguishable from a hung one - the chat script
+    prints each tool call as it lands. The default is None, so every measured
+    run behaves exactly as it did before this parameter existed.
+    """
+    # The prompt ships with `<<TOOLS>>` as a placeholder and `system_for()`
+    # replaces it from the registry. Two scripts passed the raw SYSTEM instead,
+    # so the model was handed a prompt whose <tools> block was the literal string
+    # `<<TOOLS>>` - and a rule reading "every run ends through a terminal tool
+    # above" with nothing above it. On the native path the schemas still arrive
+    # in the `tools` array, so the run does not crash; it degrades, which is why
+    # it survived twenty-six runs unnoticed. Checked here rather than in each
+    # caller because every caller is where it was already got wrong.
+    assert "<<TOOLS>>" not in system, (
+        "the system prompt still contains the <<TOOLS>> placeholder: pass "
+        "system_for(registry), not SYSTEM")
     run_id = uuid.uuid4().hex[:8]
     # The dispatcher needs the goal to check a question against it: a `blocked`
     # that repeats the goal is not a request for information. Set here rather
@@ -74,6 +94,14 @@ async def run_agent(client, dispatcher, registry, system, user_message,
     dispatcher.goal = user_message
     transcript = [{"role": "user", "content": user_message}]
     trace = []
+
+    def record(entry):
+        """Append to the trace and tell the watcher. One function so a future
+        step cannot be added that the watcher never hears about - the same
+        reason `observed` is one structure and not two variables."""
+        trace.append(entry)
+        if on_step is not None:
+            on_step(entry)
     resumes = 0
     started, last_sig = time.time(), None
     ungrounded = unterminated = 0
@@ -120,7 +148,7 @@ async def run_agent(client, dispatcher, registry, system, user_message,
                               "evidence_url).")
                 transcript.append({"role": "tool", "name": "grounding_check",
                                    "content": obs})
-                trace.append({"step": step, "tool": None, "args": {}, "thought": "",
+                record({"step": step, "tool": None, "args": {}, "thought": "",
                               "tier": None, "obs": obs, "tokens": tokens,
                               "latency_ms": int((time.time() - t0) * 1000)})
                 if ungrounded >= 2:
@@ -160,7 +188,7 @@ async def run_agent(client, dispatcher, registry, system, user_message,
                               "your job.")
                 transcript.append({"role": "tool", "name": "termination_check",
                                    "content": obs})
-                trace.append({"step": step, "tool": None, "args": {}, "thought": "",
+                record({"step": step, "tool": None, "args": {}, "thought": "",
                               "tier": None, "obs": obs, "tokens": tokens,
                               "latency_ms": int((time.time() - t0) * 1000)})
                 if unterminated >= 2:
@@ -169,7 +197,7 @@ async def run_agent(client, dispatcher, registry, system, user_message,
                 continue                   # hand it back and let the model correct
 
             transcript.append({"role": "assistant", "content": reply.text})
-            trace.append({"step": step, "tool": None, "args": {}, "thought": "",
+            record({"step": step, "tool": None, "args": {}, "thought": "",
                           "tier": None, "obs": {"ok": True, "terminal": "complete",
                                                 "detail": reply.text or ""},
                           "tokens": tokens,
@@ -190,7 +218,7 @@ async def run_agent(client, dispatcher, registry, system, user_message,
         obs, tier = await dispatcher.dispatch(call)
         transcript.append({"role": "tool", "name": call.name, "content": obs})
 
-        trace.append({"step": step, "tool": call.name, "args": call.args,
+        record({"step": step, "tool": call.name, "args": call.args,
                       "thought": call.thought, "tier": tier.value if tier else None,
                       "obs": obs, "tokens": tokens,
                       "latency_ms": int((time.time() - t0) * 1000)})

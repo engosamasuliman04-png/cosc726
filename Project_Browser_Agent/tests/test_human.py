@@ -11,7 +11,7 @@ the same reason the gate tests drive the dispatcher.
 
 import pytest
 
-from browser_agent import (SYSTEM, Decision, HumanAction, build_agent,
+from browser_agent import (Decision, HumanAction, build_agent, system_for,
                            resolved_by_one_reply, resume, run_agent)
 from browser_agent.clients import ScriptedClient
 from browser_agent.fakes import ALLOW, FakePage, R
@@ -23,7 +23,7 @@ def agent(allow_consequential=False):
 
 async def first(script, allow_consequential=False, **kw):
     _, reg, disp = agent(allow_consequential)
-    res = await run_agent(ScriptedClient(script), disp, reg, SYSTEM, "q", **kw)
+    res = await run_agent(ScriptedClient(script), disp, reg, system_for(reg), "q", **kw)
     return res, reg, disp
 
 # ------------------------------------------------ the decision is validated
@@ -50,7 +50,7 @@ async def test_an_answered_question_lets_the_run_finish():
         R("read_page", {}),
         R("finish", {"answer": "Example Domain",
                      "evidence_url": "https://example.com/"})]),
-        disp, reg, SYSTEM, "q", res, Decision(action=HumanAction.ANSWER,
+        disp, reg, system_for(reg), "q", res, Decision(action=HumanAction.ANSWER,
                                               text="https://example.com/"))
     assert out.stop_reason == "complete"
     assert out.run_id == res.run_id              # one run, not two
@@ -64,14 +64,14 @@ async def test_an_unanswerable_question_is_not_rescued_by_a_reply():
     res, reg, disp = await first([R("blocked", {"question": "Is it available?"})])
     out = await resume(ScriptedClient([
         R("blocked", {"question": "No public page states this."})]),
-        disp, reg, SYSTEM, "q", res,
+        disp, reg, system_for(reg), "q", res,
         Decision(action=HumanAction.ANSWER, text="I do not know either"))
     assert out.stop_reason == "blocked"
     assert not resolved_by_one_reply(out)
 
 async def test_the_human_reply_reaches_the_model():
     res, reg, disp = await first([R("blocked", {"question": "Which URL?"})])
-    await resume(ScriptedClient([R("read_page", {})]), disp, reg, SYSTEM, "q",
+    await resume(ScriptedClient([R("read_page", {})]), disp, reg, system_for(reg), "q",
                  res, Decision(action=HumanAction.ANSWER, text="use example.com"))
     human = [m for m in res.transcript if m.get("name") == "human"]
     assert human and human[0]["content"]["detail"] == "use example.com"
@@ -86,7 +86,7 @@ async def test_a_proposal_can_finally_be_answered():
                                  allow_consequential=True)
     assert res.stop_reason == "pending_approval"
 
-    out = await resume(ScriptedClient([]), disp, reg, SYSTEM, "q", res,
+    out = await resume(ScriptedClient([]), disp, reg, system_for(reg), "q", res,
                        Decision(action=HumanAction.APPROVE, text="go ahead"))
     assert out.stop_reason == "approved" and out.resumes == 1
 
@@ -97,7 +97,7 @@ async def test_a_denied_proposal_ends_and_does_not_reopen():
     rather than pass quietly."""
     res, reg, disp = await first([R("submit_form", {"reason": "confirm purchase"})],
                                  allow_consequential=True)
-    out = await resume(ScriptedClient([]), disp, reg, SYSTEM, "q", res,
+    out = await resume(ScriptedClient([]), disp, reg, system_for(reg), "q", res,
                        Decision(action=HumanAction.DENY, text="not authorised"))
     assert out.stop_reason == "denied"
     assert out.detail == "not authorised"
@@ -109,13 +109,13 @@ async def test_a_proposal_cannot_be_answered_and_a_question_cannot_be_approved()
     nothing, and answering a proposal answers nothing."""
     q, reg, disp = await first([R("blocked", {"question": "Which URL?"})])
     with pytest.raises(ValueError):
-        await resume(ScriptedClient([]), disp, reg, SYSTEM, "q", q,
+        await resume(ScriptedClient([]), disp, reg, system_for(reg), "q", q,
                      Decision(action=HumanAction.APPROVE))
 
     p, reg2, disp2 = await first([R("submit_form", {"reason": "confirm purchase"})],
                                  allow_consequential=True)
     with pytest.raises(ValueError):
-        await resume(ScriptedClient([]), disp2, reg2, SYSTEM, "q", p,
+        await resume(ScriptedClient([]), disp2, reg2, system_for(reg2), "q", p,
                      Decision(action=HumanAction.ANSWER, text="yes"))
 
 async def test_a_finished_run_is_not_resumable():
@@ -123,7 +123,7 @@ async def test_a_finished_run_is_not_resumable():
         R("read_page", {}),
         R("finish", {"answer": "x", "evidence_url": "https://example.com/"})])
     with pytest.raises(ValueError):
-        await resume(ScriptedClient([]), disp, reg, SYSTEM, "q", res,
+        await resume(ScriptedClient([]), disp, reg, system_for(reg), "q", res,
                      Decision(action=HumanAction.ANSWER, text="more"))
 
 async def test_the_resume_cap_holds():
@@ -131,11 +131,11 @@ async def test_the_resume_cap_holds():
     at one, "did a single human reply resolve it?" has a clean answer."""
     res, reg, disp = await first([R("blocked", {"question": "Which URL?"})])
     once = await resume(ScriptedClient([R("blocked", {"question": "And then?"})]),
-                        disp, reg, SYSTEM, "q", res,
+                        disp, reg, system_for(reg), "q", res,
                         Decision(action=HumanAction.ANSWER, text="example.com"))
     assert once.resumes == 1
 
-    twice = await resume(ScriptedClient([R("read_page", {})]), disp, reg, SYSTEM,
+    twice = await resume(ScriptedClient([R("read_page", {})]), disp, reg, system_for(reg),
                          "q", once, Decision(action=HumanAction.ANSWER, text="again"))
     assert twice.resumes == 1                      # unchanged
     assert "resume cap" in twice.detail

@@ -21,8 +21,8 @@ from browser_agent import config
 from browser_agent import (GUARD_REASONS, INJECTIONS, Decision, Tier,
                             answer_support, classify, detector_miss_rate,
                            awaits_human,
-                           build_agent, resolved_by_one_reply, resume, run_agent,
-                           system_for)
+                           build_agent, independent_repeats, resolved_by_one_reply,
+                           resume, run_agent, scorecard, system_for)
 from browser_agent.clients import goal_coverage
 from browser_agent.llm_planner import LLMPlanner
 from browser_agent.planning import (Goal, HeuristicCritic,
@@ -759,6 +759,37 @@ async def main():
             flag = "stable" if len(uniq) == 1 else f"UNSTABLE ({len(uniq)} outcomes)"
             print(f"  {label:<18} {flag:<22} {', '.join(got)}")
 
+        # ... and the same data as the three numbers Week 11 asks for. The block
+        # above reports WHICH endings a task produced; this one reports how often
+        # the ending was the right one, which is a different question: a task can
+        # be perfectly stable and stably wrong.
+        labels = [t[0] for t in tasks]
+        loose, strict_c = (scorecard(rows, labels, "correct"),
+                           scorecard(rows, labels, "strict"))
+        print(f"\nPASS^K   {args.repeat} repeats of {loose['n']} task(s)")
+        print(f"  {'':<22} {'pass@1':>8} {'pass@k':>8} {'pass^k':>8}")
+        for name, sc in (("stop reason matched", loose),
+                         ("... and earned", strict_c)):
+            print(f"  {name:<22}"
+                  + "".join(f"{sc[k]}/{sc['n']:<2}".rjust(9)
+                            for k in ("pass@1", "pass@k", "pass^k")))
+        if loose["flaky"]:
+            print(f"  FLAKY: {', '.join(loose['flaky'])}")
+            print("         neither passing nor failing, and invisible at k=1")
+        else:
+            print("  FLAKY: none - every task gave the same verdict every time")
+        # The number is only a number if the repeats were independent. They are
+        # not at temperature 0 without a varying seed: greedy decoding never
+        # consults the seed, so N repeats are one trajectory printed N times and
+        # pass^k is pass@1 by construction. Said here rather than refused,
+        # because repeating a pinned configuration is a legitimate check that
+        # the HARNESS is deterministic - it is just not a variance measurement,
+        # and this project has already published one number that confused the two.
+        if not independent_repeats(args.temp, args.vary_seed):
+            print("  NOT A VARIANCE MEASUREMENT: --temp 0 and no --vary-seed, so "
+                  "every\n         repeat is the same trajectory. pass^k cannot "
+                  "differ from pass@1 here.")
+
     # The interaction metric. NOT "did the loop continue" - it always can - but
     # whether the question the agent asked was answerable by one reply. A task
     # that never stopped for a person is not in the denominator.
@@ -908,6 +939,16 @@ async def main():
                       "tasks": [t[0] for t in tasks],
                       "repeat": args.repeat,
                       "stop_mode": args.stop_mode},
+         # Written whenever it exists, because the scorecard is the deliverable
+         # Week 11 asks for and re-deriving it from `rows` later means writing
+         # the aggregation twice, in two places, from memory.
+         **({"scorecard": {
+                 "loose": scorecard(rows, [t[0] for t in tasks], "correct"),
+                 "strict": scorecard(rows, [t[0] for t in tasks], "strict"),
+                 # An honest scorecard says whether its repeats were independent.
+                 "independent_repeats": independent_repeats(args.temp,
+                                                            args.vary_seed),
+             }} if args.repeat > 1 else {}),
          "rows": rows}, indent=2))
     print(f"\nwritten: {args.out}")
 

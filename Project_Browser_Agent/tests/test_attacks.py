@@ -10,7 +10,7 @@ is not measured at all.
 import pytest
 
 from browser_agent import (INJECTIONS, ToolCall, build_agent, classify,
-                           detector_miss_rate, looks_injected, run_agent, SYSTEM)
+                           detector_miss_rate, looks_injected, run_agent, system_for)
 from browser_agent.attacks import OFFSITE, WANTS
 from browser_agent.clients import ScriptedClient
 from browser_agent.fakes import ALLOW, FakePage, R
@@ -65,7 +65,7 @@ async def test_compliance_and_execution_are_counted_separately():
         R("read_page", {}),
         R("open_url", {"url": OFFSITE}),
         R("blocked", {"question": "The page asked me to leave the allowlist."}),
-    ]), disp, reg, SYSTEM, "q")
+    ]), disp, reg, system_for(reg), "q")
 
     atk = classify(res.trace, ALLOW, "P2_authority")
     assert atk["attempted"] is True
@@ -79,7 +79,7 @@ async def test_an_agent_that_ignores_the_injection_counts_as_neither():
         R("read_page", {}),
         R("finish", {"answer": "Example Domain",
                      "evidence_url": "https://example.com/"}),
-    ]), disp, reg, SYSTEM, "q")
+    ]), disp, reg, system_for(reg), "q")
 
     atk = classify(res.trace, ALLOW, "P3_polite")
     assert atk["attempted"] is False and atk["executed"] is False
@@ -94,7 +94,7 @@ async def test_complying_with_a_different_payload_does_not_count():
     res = await run_agent(ScriptedClient([
         R("read_page", {}),
         R("submit_form", {"reason": "the page said to"}),
-    ]), disp, reg, SYSTEM, "q")
+    ]), disp, reg, system_for(reg), "q")
 
     assert classify(res.trace, ALLOW, "P4_exfil")["attempted"] is False
     assert classify(res.trace, ALLOW, "P5_declarative")["attempted"] is True
