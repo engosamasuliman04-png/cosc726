@@ -24,6 +24,9 @@ from browser_agent import (GUARD_REASONS, INJECTIONS, Decision, Tier,
                            build_agent, resolved_by_one_reply, resume, run_agent,
                            system_for)
 from browser_agent.clients import goal_coverage
+from browser_agent.llm_planner import LLMPlanner
+from browser_agent.planning import (Goal, HeuristicCritic,
+                                    run_planned_agent, validate_plan)
 from browser_agent.memory import (MemoryStore, MemoryTools, Scope,
                                    register_memory_tools)
 from browser_agent.clients import HeuristicClient
@@ -31,6 +34,52 @@ from browser_agent.ollama_client import (HttpTransport, OllamaBackend,
                                          OllamaClient, as_sent)
 
 ALLOW = {"example.com", "iana.org"}
+
+# A planned run has a different shape from a ReAct run - rounds, not steps; a
+# plan, not a trace - so it gets its own row builder rather than being bent into
+# the other one. Every column the report prints is still present, because a row
+# of a different shape crashes the summary after the work and before the output.
+PLAN_OK = {"complete", "blocked", "out_of_scope"}
+
+
+def plan_row(label, rep, goal, expected, pres, planner, secs) -> dict:
+    """The one number Week 7 is about is `plan_valid_first_try`.
+
+    Not "did the task succeed" - the gates and the loop already decide that, and
+    T1-T4 have been measured to death through ReAct. The question a plan-first
+    architecture exists to answer is whether a sequence can be INSPECTED before
+    anything runs, which is worth nothing if the model cannot produce one that
+    survives inspection.
+    """
+    first = pres.rounds[0] if pres.rounds else {}
+    problems = first.get("plan_problems", ["no plan was produced"])
+    return {
+        "task": label, "rep": rep, "goal": goal,
+        "expected": expected, "got": pres.stop_reason,
+        "detail": pres.detail,
+        "correct": pres.stop_reason == expected,
+        # A planned run that ends through a terminal step ended through a tool by
+        # construction: execute_plan dispatches every step past the same gates.
+        "strict": pres.stop_reason == expected,
+        "via_tool": pres.stop_reason in PLAN_OK,
+        "plan_valid_first_try": not problems,
+        "plan_problems": problems,
+        "plan_rounds": pres.rounds_used,
+        "plan_parse_failures": planner.parse_failures,
+        "plan_steps": len(first.get("plan").steps) if first.get("plan") else 0,
+        "plan_raw": planner.last_raw,
+        "resumed_from": "-", "resolved": False, "no_reply": "",
+        "degraded_by_reply": False, "ended_by": "-",
+        "evidence": 0, "support": None, "goal_cov": 0.0,
+        "gate_refusals": sum(1 for r in pres.rounds for st in r.get("exec", [])
+                             if st.get("error")),
+        "errors": [f"plan:{p}" for p in problems],
+        "answer": pres.detail[:200],
+        "steps": pres.rounds_used, "tokens": pres.tokens_used,
+        "secs": round(secs, 1), "parse_failures": planner.parse_failures,
+    }
+
+
 
 TASKS = [
     # A browser-agent task must be PAGE-DEPENDENT. A goal the model can answer
@@ -163,6 +212,14 @@ async def main():
     # WEEK 6. memory.py has been built, tested and never measured. The tools
     # exist and `register_memory_tools` was called by nothing but its own tests,
     # so every run from A to AI was made by an agent with no memory at all.
+    # WEEK 7. planning.py is complete and its tests hand it plans written by
+    # hand, so they measure the gates and never the model. --plan routes each
+    # task through plan -> validate -> execute -> critique -> re-plan instead of
+    # the ReAct loop, and asks the week's actual question: can this model emit a
+    # plan that passes validate_plan before anything runs?
+    ap.add_argument("--plan", action="store_true",
+                    help="plan first, then execute. Reports plan_valid_first_try, "
+                         "which is the number the lecture is about.")
     ap.add_argument("--memory", action="store_true",
                     help="register search_memory and remember_fact, share one "
                          "store across the run, and add T6/T7/T8: write, read "
@@ -397,6 +454,28 @@ async def main():
                     raise SystemExit(f"--drop-tool {name}: not in the registry "
                                      f"({sorted(reg)})")
             t0 = time.time()
+            if args.plan:
+                # Gate 4 is simulated at plan time, so allow_consequential must
+                # agree with what build_agent was given or the plan is judged
+                # under different rules than it would run under.
+                # The backend, not the client: see llm_planner's note. Built
+                # here with the same limits so the plan call is bounded like
+                # every other call in the run.
+                backend = OllamaBackend(
+                    args.model, transport=HttpTransport(timeout=args.timeout),
+                    think=None, num_predict=1024, num_ctx=8192,
+                    seed=(rep - 1) if args.vary_seed else 0,
+                    temperature=args.temp)
+                planner = LLMPlanner(backend, reg, system_for(reg))
+                pres = await run_planned_agent(
+                    planner, HeuristicCritic(), disp, reg, Goal(text=goal),
+                    max_rounds=3,
+                    allow_consequential=(args.allow_consequential
+                                         or label in NEEDS_APPROVAL))
+                rows.append(plan_row(label, rep, goal, expected, pres, planner,
+                                     time.time() - t0))
+                await b.close()
+                continue
             r = await run_agent(client, disp, reg, system_for(reg), goal,
                                 max_steps=8, deadline_s=args.deadline,
                                 require_terminal_tool=not args.allow_prose_exit)
@@ -771,6 +850,22 @@ async def main():
                       " set, so\n     the store hides it from recall. That is the"
                       " design working, and\n     T7 is measuring an empty result"
                       " rather than a recall failure.")
+
+    if args.plan:
+        n = len(rows)
+        ok = [r for r in rows if r.get("plan_valid_first_try")]
+        parsed = [r for r in rows if not r.get("plan_parse_failures")]
+        print(f"\nPLANNING   over {n} planned runs")
+        print(f"  the model emitted parseable JSON        : {len(parsed)}/{n}")
+        print(f"  the plan passed validation first try    : {len(ok)}/{n}")
+        print(f"  re-plan rounds used (cap 3)             : "
+              f"{[r.get('plan_rounds') for r in rows]}")
+        for r in rows:
+            print(f"    {r['task']:<18} {r['got']:<12} steps={r.get('plan_steps')}")
+            for pb in (r.get("plan_problems") or [])[:3]:
+                print(f"      rejected: {pb[:88]}")
+            if r.get("plan_parse_failures"):
+                print(f"      raw: {r.get('plan_raw','')[:88]!r}")
 
     # A guard ending is not a judgement the agent made - it is a refusal it
     # failed to act on twice. Counted separately because `ungrounded` spent a
