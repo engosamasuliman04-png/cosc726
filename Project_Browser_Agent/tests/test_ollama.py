@@ -6,7 +6,7 @@ needs a server. The live counterpart is scripts/run_agent.py.
 
 import pytest
 
-from browser_agent import SYSTEM, ToolCall, build_agent, report, run_agent
+from browser_agent import SYSTEM, ToolCall, build_agent, report, run_agent, system_for
 from browser_agent.fakes import ALLOW, FakePage, FakeTransport, native, prose
 from browser_agent.ollama_client import (
     OllamaBackend, OllamaClient, OllamaError, extract_json,
@@ -162,7 +162,7 @@ async def test_full_run_on_the_native_path():
                "answer with evidence"),
     ])
     c = OllamaClient(OllamaBackend("qwen3:4b", t))
-    res = await run_agent(c, disp, reg, SYSTEM, "What does RFC 2606 reserve?", max_steps=8)
+    res = await run_agent(c, disp, reg, system_for(reg), "What does RFC 2606 reserve?", max_steps=8)
 
     assert res.stop_reason == "complete"
     assert c.parse_failures == 0

@@ -1,0 +1,78 @@
+model   : qwen3:1.7b   host: http://localhost:11434
+
+  Type a request and press Enter. The agent will use its tools and answer.
+  It can only visit: example.com, iana.org
+
+    /help     what the agent can and cannot do
+    /tools    the tools it is allowed to call
+    /where    which page the browser is on now
+    /quit     end the session
+
+  Each turn is a fresh run. Write complete requests - "what does the IANA
+  page say", not "what does it say".
+
+
+
+agent > Example Domain
+  source: https://example.com/
+  [complete]  steps 3  refused 1  232s
+    refused: no_terminal_tool
+
+model   : qwen3:1.7b   host: http://localhost:11434
+
+  Type a request and press Enter. The agent will use its tools and answer.
+  It can only visit: example.com, iana.org
+
+    /help     what the agent can and cannot do
+    /tools    the tools it is allowed to call
+    /where    which page the browser is on now
+    /quit     end the session
+
+  Each turn is a fresh run. Write complete requests - "what does the IANA
+  page say", not "what does it say".
+
+
+
+agent > wrote prose twice instead of calling a terminal tool
+  [unterminated]  steps 3  refused 2  200s
+    refused: no_terminal_tool
+    refused: no_terminal_tool
+
+
+agent > 1
+  source: https://example.com
+  [complete]  steps 3  refused 1  120s
+    refused: no_terminal_tool
+
+
+agent > answered twice without observing anything
+  [ungrounded]  steps 3  refused 3  141s
+    refused: domain_not_allowed
+    refused: ungrounded_answer
+    refused: ungrounded_answer
+model   : qwen3:1.7b   host: http://localhost:11434
+
+  Type a request and press Enter. The agent will use its tools and answer.
+  It can only visit: en.wikipedia.org, example.com, iana.org
+
+    /help     what the agent can and cannot do
+    /tools    the tools it is allowed to call
+    /where    which page the browser is on now
+    /quit     end the session
+
+  Each turn is a fresh run. Write complete requests - "what does the IANA
+  page say", not "what does it say".
+
+
+
+agent > Khartoum
+  source: https://en.wikipedia.org/wiki/Sudan
+  [complete]  steps 3  refused 1  147s
+    refused: schema_violation
+
+
+agent > wrote prose twice instead of calling a terminal tool
+  [unterminated]  steps 4  refused 3  251s
+    refused: ungrounded_answer
+    refused: no_terminal_tool
+    refused: no_terminal_tool

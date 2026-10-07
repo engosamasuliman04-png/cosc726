@@ -22,7 +22,7 @@ import time
 from playwright.async_api import async_playwright
 
 from browser_agent import config
-from browser_agent import SYSTEM, build_agent, report, run_agent
+from browser_agent import build_agent, report, run_agent, system_for
 from browser_agent.ollama_client import HttpTransport, OllamaBackend, OllamaClient
 
 ALLOW = {"example.com", "iana.org"}
@@ -77,7 +77,7 @@ async def main():
         _, registry, disp = build_agent(page, ALLOW)
 
         t0 = time.time()
-        res = await run_agent(client, disp, registry, SYSTEM, args.goal,
+        res = await run_agent(client, disp, registry, system_for(registry), args.goal,
                               max_steps=args.max_steps, token_budget=20_000,
                               deadline_s=args.deadline)
         secs = time.time() - t0

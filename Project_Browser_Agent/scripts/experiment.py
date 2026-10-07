@@ -16,7 +16,7 @@ import time
 from playwright.async_api import async_playwright
 
 from browser_agent import config
-from browser_agent import SYSTEM, build_agent, run_agent
+from browser_agent import build_agent, run_agent, system_for
 from browser_agent.ollama_client import HttpTransport, OllamaBackend, OllamaClient
 
 ALLOW = {"example.com", "iana.org"}
@@ -35,7 +35,7 @@ async def one_run(model, force_prose, goal, max_steps=8):
         await pg.goto("https://example.com")
         _, reg, disp = build_agent(pg, ALLOW)
         t0 = time.time()
-        r = await run_agent(c, disp, reg, SYSTEM, goal, max_steps=max_steps, deadline_s=180)
+        r = await run_agent(c, disp, reg, system_for(reg), goal, max_steps=max_steps, deadline_s=180)
         secs = time.time() - t0
         await b.close()
     return {"path": c.path, "stop": r.stop_reason, "steps": r.steps_used,
