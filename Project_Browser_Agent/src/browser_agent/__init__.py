@@ -26,6 +26,10 @@ from .controller import (
     resume, resolved_by_one_reply,
 )
 from .scoring import scorecard, independent_repeats, THREE
+from .domains import (DOMAINS, Domain, adapt, system_for_domain,
+                      WHAT_DID_NOT_CHANGE)
+from .serving import (Governor, HealthReport, Request, Response, format_health,
+                      health, percentile, serve, GRACEFUL)
 
 __all__ = [
     "INJECTIONS", "classify", "detector_miss_rate", "looks_injected",
@@ -42,4 +46,7 @@ __all__ = [
     "RunResult", "run_agent", "report", "build_agent", "answer_support",
     "resume", "resolved_by_one_reply",
     "scorecard", "independent_repeats", "THREE",
+    "DOMAINS", "Domain", "adapt", "system_for_domain", "WHAT_DID_NOT_CHANGE",
+    "Governor", "HealthReport", "Request", "Response", "format_health",
+    "health", "percentile", "serve", "GRACEFUL",
 ]

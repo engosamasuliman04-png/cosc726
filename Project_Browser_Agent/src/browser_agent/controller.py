@@ -66,7 +66,8 @@ class RunResult:
 
 async def run_agent(client, dispatcher, registry, system, user_message,
                     max_steps=6, token_budget=20_000, deadline_s=60.0,
-                    require_terminal_tool=True, on_step=None, _resume=None):
+                    require_terminal_tool=True, on_step=None,
+                    refuse_claimed_action=False, _resume=None):
     """`on_step(entry)` is called with each trace entry as it is appended.
 
     A watcher, not a participant: its return value is discarded and it is given
@@ -218,10 +219,52 @@ async def run_agent(client, dispatcher, registry, system, user_message,
         obs, tier = await dispatcher.dispatch(call)
         transcript.append({"role": "tool", "name": call.name, "content": obs})
 
+        # FOURTH GUARD, and the one with the worst failure behind it.
+        #
+        # In run AQ the agent asked to submit a form, gate 4 refused it
+        # (`requires_human_approval`, nothing was submitted), and the agent then
+        # called `finish` with the answer:
+        #
+        #     "Form submitted with message 'hello'"
+        #
+        # Grounded - it had read the page. Cited - it supplied an evidence URL.
+        # Ended through a control tool. Every existing check passed, and the
+        # sentence handed to the caller was a report of an action that never
+        # happened. Blast radius zero, trust radius total.
+        #
+        # The check is STRUCTURAL and that is deliberate. "Does this answer
+        # claim an action?" is a semantic property, and four attempts to measure
+        # semantic properties by matching characters are already in FINDINGS.md.
+        # The structural statement is stronger anyway: if a CONSEQUENTIAL call
+        # was refused in this run, then the thing the run was for did not
+        # happen, so `complete` is not one of the endings available to it -
+        # whatever the answer says. The agent still has `out_of_scope` and
+        # `blocked`, which are the true descriptions of where it ended up.
+        #
+        # Off by default: a stricter gate is a hypothesis until a run says
+        # otherwise, and every number from A to AQ was taken without it.
+        #
+        # It runs BEFORE the step is recorded, and REPLACES the observation
+        # rather than appending a second one. The first version appended, and
+        # the test caught what that leaves behind: the refused `finish` was
+        # still in the trace carrying `terminal: complete` and an evidence URL,
+        # so `RunResult.evidence` still collected the citation attached to the
+        # false claim. A refused call has to leave the record of a refusal, not
+        # a refusal filed next to the thing it refused.
+        if (refuse_claimed_action and obs.get("terminal") == "complete"
+                and any(t["obs"].get("error") == "requires_human_approval"
+                        for t in trace)):
+            obs = obs_err("claimed_refused_action",
+                          "a consequential call was refused in this run, so it "
+                          "did not happen",
+                          "End with out_of_scope(reason) if you may not do it, "
+                          "or submit_form(reason) to propose it for approval.")
+            transcript[-1] = {"role": "tool", "name": call.name, "content": obs}
+
         record({"step": step, "tool": call.name, "args": call.args,
-                      "thought": call.thought, "tier": tier.value if tier else None,
-                      "obs": obs, "tokens": tokens,
-                      "latency_ms": int((time.time() - t0) * 1000)})
+                "thought": call.thought, "tier": tier.value if tier else None,
+                "obs": obs, "tokens": tokens,
+                "latency_ms": int((time.time() - t0) * 1000)})
 
         if obs.get("terminal"):
             return stop(obs["terminal"], obs.get("detail", ""))

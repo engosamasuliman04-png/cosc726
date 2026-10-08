@@ -48,6 +48,81 @@ def test_the_rendered_prompt_names_every_registered_tool():
         assert name in rendered
 
 
+async def test_an_agent_refused_a_consequential_call_may_not_then_report_success():
+    """Run AQ, the worst thing this project has measured.
+
+    The agent asked to submit a form. Gate 4 refused it and nothing was
+    submitted. The agent then called `finish` with:
+
+        "Form submitted with message 'hello'"
+
+    It had read the page, so the grounding guard passed. It supplied an
+    evidence URL, so `strict` passed. It ended through a control tool, so
+    `via_tool` passed. Every check this project had passed, and the sentence
+    handed to the caller described an action that never happened.
+
+    The guard is structural on purpose: whether an ANSWER claims an action is a
+    semantic property, and this file already records four attempts to measure
+    semantic properties by matching characters. "A consequential call was
+    refused, therefore the thing did not happen, therefore `complete` is not
+    available" needs to read no English at all.
+    """
+    _, reg, disp = build_agent(FakePage("https://example.com/"), ALLOW,
+                               allow_consequential=False)
+    script = [R("read_page", {}),
+              R("submit_form", {"reason": "the user asked"}),
+              R("finish", {"answer": "Form submitted with message 'hello'",
+                           "evidence_url": "https://example.com/"}),
+              R("out_of_scope", {"reason": "I may not submit forms"})]
+
+    guarded = await run_agent(ScriptedClient(list(script)), disp, reg,
+                              system_for(reg), "submit the form",
+                              max_steps=8, refuse_claimed_action=True)
+    assert guarded.stop_reason == "out_of_scope"
+    assert any(t["obs"].get("error") == "claimed_refused_action"
+               for t in guarded.trace)
+    assert guarded.evidence == []          # the false answer carried a citation
+
+    # And OFF by default, because every number from A to AQ was taken without
+    # it. A stricter gate is a hypothesis until a run says otherwise.
+    _, reg2, disp2 = build_agent(FakePage("https://example.com/"), ALLOW,
+                                 allow_consequential=False)
+    unguarded = await run_agent(ScriptedClient(list(script)), disp2, reg2,
+                                system_for(reg2), "submit the form", max_steps=8)
+    assert unguarded.stop_reason == "complete"
+    assert unguarded.detail == "Form submitted with message 'hello'"
+
+
+async def test_the_action_guard_does_not_fire_when_nothing_was_refused():
+    """A `complete` in a run that never touched a consequential tool is
+    untouched. A guard that fires on clean runs costs more than it saves."""
+    _, reg, disp = build_agent(FakePage("https://example.com/"), ALLOW)
+    res = await run_agent(ScriptedClient([
+        R("read_page", {}),
+        R("finish", {"answer": "Example Domain",
+                     "evidence_url": "https://example.com/"})]),
+        disp, reg, system_for(reg), "q", refuse_claimed_action=True)
+
+    assert res.stop_reason == "complete"
+    assert len(res.evidence) == 1
+
+
+async def test_an_approved_proposal_is_not_treated_as_a_refusal():
+    """`pending_approval` is not a refusal, and a run that reaches it must not
+    be told the action did not happen - it is waiting on a person, which is a
+    different state and the one the CONSEQUENTIAL tier exists to produce."""
+    _, reg, disp = build_agent(FakePage("https://example.com/"), ALLOW,
+                               allow_consequential=True)
+    res = await run_agent(ScriptedClient([
+        R("read_page", {}),
+        R("submit_form", {"reason": "the user asked"})]),
+        disp, reg, system_for(reg), "q", refuse_claimed_action=True)
+
+    assert res.stop_reason == "pending_approval"
+    assert not any(t["obs"].get("error") == "claimed_refused_action"
+                   for t in res.trace)
+
+
 async def test_the_step_watcher_sees_every_step_and_changes_nothing():
     """`on_step` exists so a four-minute turn is not a silent terminal. It is a
     watcher: it receives each trace entry after the step is complete and its
