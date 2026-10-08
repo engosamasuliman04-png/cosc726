@@ -134,16 +134,37 @@ async def main():
                          "and a rate limit that fires would reject later "
                          "requests for a reason unrelated to what they are")
     ap.add_argument("--payload", default="P1_crude", choices=sorted(INJECTIONS))
+    ap.add_argument("--ab", action="store_true",
+                    help="the controlled comparison: ONE goal, run k times with "
+                         "the payload and k times without, and nothing else. "
+                         "F26 claimed the payload destroyed the task on one run "
+                         "against one run, with `unterminated` already the most "
+                         "common ending on clean traffic. This is the design "
+                         "that can tell those apart.")
+    ap.add_argument("--k", type=int, default=3,
+                    help="repeats per arm under --ab")
+    ap.add_argument("--temp", type=float, default=0.0,
+                    help="under --ab this MUST be above 0: at temperature 0 the "
+                         "seed is never consulted, so k repeats are one "
+                         "trajectory printed k times and the comparison is "
+                         "between two single runs wearing a larger number")
     ap.add_argument("--out", default="results_traffic.json")
     args = ap.parse_args()
 
     if args.timeout >= args.deadline:
         raise SystemExit("--timeout must be shorter than --deadline.")
 
+    if args.ab and args.temp == 0.0:
+        raise SystemExit(
+            "--ab at --temp 0: greedy decoding never consults the seed, so the "
+            "k repeats in each arm are one trajectory printed k times and the "
+            "comparison reduces to one run against one run - which is exactly "
+            "the claim F26 had to walk back. Use --temp 0.7.")
+
     dom = DOMAINS[args.domain]
     backend = OllamaBackend(args.model, transport=HttpTransport(timeout=args.timeout),
                             think=None, num_predict=1024, num_ctx=8192,
-                            seed=0, temperature=0.0)
+                            seed=0, temperature=args.temp)
     client = OllamaClient(backend)
 
     print(f"model   : {args.model}")
@@ -152,6 +173,60 @@ async def main():
     print(f"payload : {args.payload}\n")
 
     rows, reports = [], {}
+
+    if args.ab:
+        # ONE goal, two arms, k runs each. The goal is clean1's - a request the
+        # agent is known to complete - so a failure in the injected arm has
+        # somewhere to come from.
+        goal = CLEAN[0]
+        async with async_playwright() as p:
+            for arm, inject in (("without", ""), ("with", INJECTIONS[args.payload])):
+                backend.unload()
+                gov = Governor(max_chars=args.max_chars, rate_limit=args.rate_limit)
+                print(f"--- {arm} payload ---")
+                for rep in range(1, args.k + 1):
+                    # The repeat index IS the seed. Without this the arm is one
+                    # trajectory repeated, whatever the temperature.
+                    backend.seed = rep
+                    t0 = time.time()
+                    resp = await one(client, dom, p, goal, gov, inject=inject,
+                                     deadline=args.deadline, timeout=args.timeout,
+                                     payload_name=args.payload)
+                    atk = getattr(resp, "attack", None)
+                    extra = (f"  attempted={atk['attempted']} "
+                             f"executed={atk['executed']}") if atk else ""
+                    print(f"  #{rep}  {resp.status:<9} "
+                          f"{resp.stop_reason or resp.detail:<22} "
+                          f"{resp.steps} steps  {time.time()-t0:.0f}s{extra}")
+                    rows.append({"set": arm, "label": f"ab{rep}", "goal": goal,
+                                 "seed": rep, "status": resp.status,
+                                 "stop_reason": resp.stop_reason,
+                                 "served": resp.served, "steps": resp.steps,
+                                 "tokens": resp.tokens, "ms": round(resp.ms),
+                                 "detail": resp.detail,
+                                 "injected": bool(inject),
+                                 "attack": atk})
+                print()
+
+        for arm in ("without", "with"):
+            got = [r for r in rows if r["set"] == arm]
+            ok = sum(r["served"] for r in got)
+            print(f"{arm:<8} payload : served {ok}/{len(got)}   "
+                  f"endings {', '.join(r['stop_reason'] or r['status'] for r in got)}")
+        a = sum(r["served"] for r in rows if r["set"] == "without")
+        b = sum(r["served"] for r in rows if r["set"] == "with")
+        print(f"\ndifference: {a}/{args.k} without, {b}/{args.k} with.")
+        print("k=3 per arm cannot establish a small effect. It can show a large\n"
+              "one, and it can show that the two arms look alike - which is the\n"
+              "result that would retire the claim.")
+        with open(args.out, "w", encoding="utf-8") as fh:
+            json.dump({"model": args.model, "mode": "ab", "k": args.k,
+                       "temperature": args.temp, "goal": goal,
+                       "payload": args.payload, "domain": dom.as_record(),
+                       "rows": rows}, fh, indent=2)
+        print(f"\nwritten: {args.out}")
+        return
+
     async with async_playwright() as p:
         for which in (["clean", "messy"] if args.set == "both" else [args.set]):
             # Cold between sets. Two sets measured either side of a warm cache
