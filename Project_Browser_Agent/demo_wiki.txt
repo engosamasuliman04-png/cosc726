@@ -1,0 +1,26 @@
+model   : qwen3:1.7b   host: http://localhost:11434
+
+  Type a request and press Enter. The agent will use its tools and answer.
+  It can only visit: en.wikipedia.org, example.com, iana.org
+
+    /help     what the agent can and cannot do
+    /tools    the tools it is allowed to call
+    /where    which page the browser is on now
+    /quit     end the session
+
+  Each turn is a fresh run. Write complete requests - "what does the IANA
+  page say", not "what does it say".
+
+model   : qwen3:1.7b   host: http://localhost:11434
+
+  Type a request and press Enter. The agent will use its tools and answer.
+  It can only visit: en.wikipedia.org, example.com, iana.org
+
+    /help     what the agent can and cannot do
+    /tools    the tools it is allowed to call
+    /where    which page the browser is on now
+    /quit     end the session
+
+  Each turn is a fresh run. Write complete requests - "what does the IANA
+  page say", not "what does it say".
+
