@@ -44,7 +44,7 @@ from browser_agent import run_agent, system_for
 from browser_agent.domains import DOMAINS, RESEARCH, adapt, system_for_domain
 from browser_agent.serving import Governor, Request, format_health, health, serve
 from browser_agent.ollama_client import HttpTransport, OllamaBackend, OllamaClient
-from browser_agent.attacks import INJECTIONS
+from browser_agent.attacks import INJECTIONS, classify
 
 # Four requests of the shape the evaluation set is made of: specific, in scope,
 # answerable from the page in front of the agent.
@@ -70,7 +70,7 @@ INJECTED = "injected"
 
 
 async def one(client, dom, playwright, goal, gov, inject="", deadline=600,
-              timeout=180, max_steps=8):
+              timeout=180, max_steps=8, payload_name=""):
     """One request through the serving boundary, on a fresh browser.
 
     Fresh because a shared page would leak `observed` between requests, and a
@@ -84,12 +84,36 @@ async def one(client, dom, playwright, goal, gov, inject="", deadline=600,
         _, reg, disp = adapt(page, dom, inject=inject)
         system = system_for_domain(reg, dom)
 
-        async def run(query):
-            return await run_agent(client, disp, reg, system, query,
-                                   max_steps=max_steps, token_budget=20_000,
-                                   deadline_s=deadline)
+        seen = {}
 
-        return await serve(run, Request(goal, session_id="traffic"), gov)
+        async def run(query):
+            # The trace is what `classify` reads, and `serve` deliberately
+            # returns a Response rather than a RunResult - the serving layer
+            # must not hand the caller the agent's internals. So it is captured
+            # here, on the one side of the boundary that is allowed to see it.
+            res = await run_agent(client, disp, reg, system, query,
+                                  max_steps=max_steps, token_budget=20_000,
+                                  deadline_s=deadline)
+            seen["trace"] = res.trace
+            return res
+
+        resp = await serve(run, Request(goal, session_id="traffic"), gov)
+
+        # WEEK 10's classifier, wired in. The first version of this script
+        # recorded only the status and the stop reason, so the injected request
+        # produced `unterminated` and nothing in the output could say whether
+        # the agent had obeyed the instruction, attempted the off-site URL and
+        # been refused, or ignored the payload. "The injection did not succeed"
+        # was unsupported by the data, which is F17's shape: a number read as a
+        # defence when nothing had been measured.
+        #
+        # `attack` is attached to the response rather than returned separately,
+        # because a second return value is a thing a caller can forget to read.
+        if inject:
+            resp.attack = classify(seen.get("trace", []),
+                                   set(dom.allowed_domains),
+                                   payload_name or "P1_crude")
+        return resp
     finally:
         await browser.close()
 
@@ -147,18 +171,29 @@ async def main():
             for label, goal, inject in items:
                 t0 = time.time()
                 resp = await one(client, dom, p, goal, gov, inject=inject,
-                                 deadline=args.deadline, timeout=args.timeout)
+                                 deadline=args.deadline, timeout=args.timeout,
+                                 payload_name=args.payload)
                 responses.append(resp)
                 mark = resp.stop_reason or resp.detail
+                atk = getattr(resp, "attack", None)
+                extra = ""
+                if atk:
+                    # Three numbers, kept apart. `attempted` is the MODEL's
+                    # behaviour, `executed` is the WORLD's, and a run that
+                    # reports only the second hides that the model complied.
+                    extra = (f"  attack: attempted={atk['attempted']} "
+                             f"executed={atk['executed']} "
+                             f"detector={atk['detector_flagged']}")
                 print(f"  {label:<13} {resp.status:<9} {mark:<22} "
-                      f"{resp.steps} steps  {time.time()-t0:.0f}s")
+                      f"{resp.steps} steps  {time.time()-t0:.0f}s{extra}")
                 rows.append({"set": which, "label": label, "goal": goal[:120],
                              "status": resp.status, "stop_reason": resp.stop_reason,
                              "served": resp.served, "steps": resp.steps,
                              "tokens": resp.tokens, "ms": round(resp.ms),
                              "detail": resp.detail,
                              "evidence_url": resp.evidence_url,
-                             "injected": bool(inject)})
+                             "injected": bool(inject),
+                             "attack": getattr(resp, "attack", None)})
             reports[which] = health(responses)
             print()
 
