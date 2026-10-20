@@ -6,10 +6,10 @@ Al-Neelain University · College of Graduate Studies · MSc Artificial Intellige
 | | |
 |---|---|
 | Author | Osama Suliman Merghani |
-| Student number | FILL IN |
-| Team identifier | FILL IN |
+| Student number | 521-125825932 |
+| Team identifier | Individual submission — no team |
 | Supervisor | Dr Fakhreldin Saeed |
-| Repository | FILL IN — paste the GitHub URL here |
+| Repository | <https://github.com/engosamasuliman04-png/cosc726> |
 | Video demo | FILL IN — paste the unlisted YouTube URL here |
 | Word count | 4,285 (sections 1–6; references and appendices excluded) |
 | Date | October 2026 |
@@ -591,18 +591,18 @@ Likelihood and impact are assessed for the health domain specifically. The
 *not measured* is a control that exists and has not been tested, and is reported
 as such.
 
-| # | Risk | Likelihood | Impact | Guardrail | Human oversight | Evidence |
-|---|---|---|---|---|---|---|
-| R1 | The agent answers a health question from model memory rather than from the page | High | **Severe** — a fabricated clinical fact reaching a person who cannot check it | Grounding guard: an answer before any READ returns is refused | None required; refusal is automatic | Fired live on the first turn of a session (F21) |
-| R2 | The agent reports an action it did not perform | Medium | **Severe** — zero blast radius, total trust radius | Claimed-action guard; corrective observation replaces the false one | Reviewer sees the run end without a success claim | 2/3 false claims removed, 12/15 runs byte-identical (F27) |
-| R3 | A message reaches a clinic without a human deciding | Low | **Severe** | `submit_form` is the only CONSEQUENTIAL tool and performs nothing; gate 4 refuses it without permission; the tool returns `pending_approval` | **Explicit approve/deny, mid-run** | 0 unauthorised actions in every run and configuration measured |
-| R4 | Instructions injected into page text are obeyed | Medium | High | Nothing a page says can authorise a tool call; gates are structural, not lexical | None | 0/3 compliance, `P1_crude`; 2 of 8 payloads measured |
-| R5 | The agent leaves the authoritative-source allow-list | Medium | High | Gate 4 refuses off-list URLs | None | Covered by tests; refusals observed in live runs |
-| R6 | One user's stored facts reach another | Low | High | Per-user keying in `memory.py` | None | **0 leaks**, measured across two users in runs and tests |
-| R7 | The agent answers a question that is a clinician's to answer | High | **Severe** | Domain refusal text, separating "I lack information" from "this is not my decision"; `out_of_scope` ending | None automatic — **and this is the gap** | Refusal shape implemented; **wording not reviewed by a clinician** |
-| R8 | Cost or denial-of-service through oversized or repeated requests | Medium | Low | Governor enforces size and rate limits before the model is called | None | Rejection at 2 s, 0 steps, 0 tokens — 120× cheaper than a served request |
-| R9 | A run consumes unbounded time or tokens | High | Low | Four separately named caps: steps, time, tokens, no-progress | None | Caps fire in measured runs; each is a distinct stop reason |
-| R10 | A reported score misrepresents reliability | **Realised** | High | Three metrics reported, never one; task set versioned; `--vary-seed` required for independent repeats and the harness warns when it is absent | Reader of the report | `12/12` → `4/4 printed three times` (F22); 18 instruments recorded as having reported falsely |
+| # | Risk | Likelihood / Impact | Guardrail, and where a human sits | Evidence |
+|---|---|---|---|---|
+| R1 | The agent answers a health question from model memory rather than from the page | High / **Severe** | Grounding guard refuses an answer produced before any READ returns. No human needed — the refusal is automatic | Fired live on the first turn of a session (F21) |
+| R2 | The agent reports an action it did not perform | Medium / **Severe** | Claimed-action guard; the corrective observation replaces the false one. The reviewer sees the run end with no success claim | 2/3 false claims removed, 12/15 runs byte-identical (F27) |
+| R3 | A message reaches a clinic without a human deciding | Low / **Severe** | `submit_form` is the only CONSEQUENTIAL tool and performs nothing; gate 4 refuses it without permission; the tool returns `pending_approval`. **Explicit approve / deny, mid-run** | 0 unauthorised actions in every run and configuration measured |
+| R4 | Instructions injected into page text are obeyed | Medium / High | Nothing a page says can authorise a tool call; gates are structural, not lexical. No human in the loop | 0/3 compliance on `P1_crude`; 2 of 8 payloads measured |
+| R5 | The agent leaves the authoritative-source allow-list | Medium / High | Gate 4 refuses off-list URLs. No human in the loop | Covered by tests; refusals observed in live runs |
+| R6 | One user's stored facts reach another | Low / High | Per-user keying in `memory.py`. No human in the loop | **0 leaks**, across two users, in runs and in tests |
+| R7 | The agent answers a question that is a clinician's to answer | High / **Severe** | Domain refusal text separating "I lack information" from "this is not my decision"; `out_of_scope` ending. **No automatic oversight — this is the gap** | Refusal shape implemented; **wording not reviewed by a clinician** |
+| R8 | Cost or denial of service through oversized or repeated requests | Medium / Low | Governor enforces size and rate limits before the model is called | Rejection at 2 s, 0 steps, 0 tokens — 120× cheaper than a served request |
+| R9 | A run consumes unbounded time or tokens | High / Low | Four separately named caps: steps, time, tokens, no-progress | Caps fire in measured runs; each is a distinct stop reason |
+| R10 | A reported score misrepresents reliability | **Realised** / High | Three metrics reported, never one; the task set is versioned; `--vary-seed` is required for independent repeats and the harness warns when it is absent. The reader is the check | `12/12` → `4/4 printed three times` (F22); 18 instruments recorded as having reported falsely |
 
 ### A.2 Where human oversight sits, in one place
 
