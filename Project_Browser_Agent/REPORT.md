@@ -11,7 +11,7 @@ Al-Neelain University · College of Graduate Studies · MSc Artificial Intellige
 | Supervisor | Dr Fakhreldin Saeed |
 | Repository | <https://github.com/engosamasuliman04-png/cosc726> |
 | Video demo | FILL IN — paste the unlisted YouTube URL here |
-| Word count | 4,382 (sections 1–6; references and appendices excluded) |
+| Word count | 4,442 (sections 1–6; references and appendices excluded) |
 | Date | October 2026 |
 
 ---
@@ -142,11 +142,11 @@ what the call *touches in the world*, not of how complex it is.
 | `finish` | CONTROL | nothing — ends the run with an answer |
 | `blocked` / `out_of_scope` | CONTROL | nothing — end the run without one |
 
-Two consequences. **Three of the eight tools do nothing except stop**, which is
-what makes "the run ended" a fact the system records rather than an inference
-from silence. And exactly one tool has a real side effect, it is the only one
-gated on human approval, and even when the gate permits it, it still performs
-nothing — it returns `pending_approval` and waits.
+**Three of the eight tools do nothing except stop**, which is what makes "the
+run ended" a fact the system records rather than an inference from silence. And
+exactly one has a real side effect, it is the only one gated on human approval,
+and even when the gate permits it, it still performs nothing — it returns
+`pending_approval` and waits.
 
 ### 2.3 The four gates
 
@@ -265,20 +265,13 @@ one. The fix is a three-line assertion. Measured afterwards: one task moved from
 `unterminated` to `complete` with evidence, and refusals fell from 2 to 1 — not
 to 0, which is itself informative.
 
-**The percentile that always flattered.** `p95` was computed as
-`int(0.95 * (n - 1))`, which truncates: at n=20 it returned index 18 and hid the
-slowest request. The error was never in a random direction — it always made the
-system look faster. Now computed by nearest rank.
-
-**The guard that appended instead of replacing.** The claimed-action guard's
-first version appended its correction *after* the false `finish`, leaving the
-false answer's citation in the run's evidence field, where a scorer would still
-have counted it as a cited success. It now replaces the observation.
-
-**The headline number that was one run printed three times** — section 4.1.
-
-The last two were caught by tests, not by reading output. That is the common
-thread: all four were quantities that nothing in the system could check.
+Three more are tabulated in section 4.7: a `p95` computed with `int()`, which
+truncated and so always flattered; a guard that appended its correction after
+the false answer instead of replacing it, leaving the false citation in the
+evidence field; and the headline number that was one run printed three times.
+Two of those were caught by tests rather than by reading output, which is the
+common thread — all four were quantities that nothing in the system could
+check.
 
 ---
 
@@ -395,13 +388,12 @@ not what its text resembles.
 
 ### 4.6 An experiment that could not answer its question
 
-A controlled comparison was run on the injection question: one goal, k=3 with
-the payload and k=3 without. It returned 2/3 against 1/3, **Fisher's exact
-p = 1.000.** No 3-against-3 split can reach significance at any effect size.
-The design had no power to detect anything, and this was knowable by arithmetic
-*before* the first run was started — the run cost 22 minutes to produce a number
-that could not have been informative. The question needs roughly 34 runs per arm
-and now sits in the open-questions list with that price attached.
+A controlled comparison on the injection question — one goal, k=3 with the
+payload and k=3 without — returned 2/3 against 1/3, **Fisher's exact
+p = 1.000.** No 3-against-3 split reaches significance at any effect size. The
+design had no power to detect anything, which was knowable by arithmetic before
+the first run started. It cost 22 minutes to produce a number that could not
+have been informative. The question needs roughly 34 runs per arm.
 
 ### 4.7 What this project learned about measuring itself
 
@@ -415,6 +407,7 @@ reported something false.** A selection:
 | `<<TOOLS>>` | the prompt was rendered | nothing distinguished a filled template from an empty one, for 26 runs |
 | `now=time.time()` | the record is fresh | a 30-day half-life against seconds: 290 s read as 290 days |
 | `payload_landed` | the injection reached the model | asked the trace, not the message; two truncations had removed it |
+| the reproduction command | it reproduces the report's numbers | one reworded sentence inside `run_agent` changed an evaluated task's ending, and nothing in the repository recorded that the prompt had changed (F33) |
 
 **Ten of the eighteen pointed at the model. They were the author's own code.**
 
@@ -484,6 +477,16 @@ earlier gate here did not have — a previous attempt, refusing a `blocked`
 ending that merely restated the goal, broke task `T3` and was reverted, because
 it had been measured only against what it was meant to catch.
 
+**The same principle, under temptation, a second time.** In the health domain
+the agent will not call `out_of_scope`: the guards stop it and the caller gets
+nothing (F31). The one-line fix — let the controller end such a run as
+`out_of_scope` — was refused, because the agent declined nothing and a record
+saying otherwise is F24 again. What was built instead splits the two questions.
+The caller sees the deployment's **standing refusal**, labelled as the
+deployment's and not the agent's; `stop_reason` stays `ungrounded`; `GRACEFUL`
+is untouched, so the served rate does not move. The user is served and the
+number is not flattered.
+
 ### 5.4 Privacy and governance
 
 **Data.** Memory holds only what a user explicitly asks to store, keyed per
@@ -535,9 +538,9 @@ judgement is absent.
 ### 6.2 What would break it
 
 A login wall, a CAPTCHA, or heavy client-side rendering. A goal needing more
-than a few steps — the step and time caps fire first, and are set low on
-purpose. A site outside the allow-list, where the agent refuses rather than
-following the link; correct behaviour, and a hard boundary.
+than a few steps — the caps fire first, and are set low on purpose. A site
+outside the allow-list, where the agent refuses rather than following the link:
+correct behaviour, and a hard boundary.
 
 ### 6.3 Next steps, in the order they should be taken
 
@@ -618,6 +621,7 @@ as such.
 |---|---|---|---|
 | `pending_approval` | A human reviewer | The agent's proposal in its own words, the tool, and the arguments | `approve` resumes from the stopped step with state carried; `deny` ends the run and is recorded |
 | `blocked` | A human | The agent's question and why it cannot proceed | A reply resumes the run; an unhelpful reply degrades the outcome, and that cost is recorded rather than hidden |
+| The standing refusal | Nobody — it is automatic | The deployment's refusal text, **labelled as the deployment's and not the agent's**, shown when the guards ended a run the agent never ended itself | The caller is not left with nothing. `stop_reason` is unchanged, and the run still does not count as served |
 | The refusal wording | **A clinician — not yet obtained** | The health refusal text in `domains.py` | Required before any real use (section 6.3) |
 | The score | The reader | Three metrics, the task-set version, and the run letter | — |
 
