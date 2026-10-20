@@ -41,6 +41,7 @@ from playwright.async_api import async_playwright
 
 from browser_agent import config
 from browser_agent import build_agent, run_agent, system_for
+from browser_agent.domains import DOMAINS, Domain, adapt, system_for_domain
 from browser_agent.ollama_client import HttpTransport, OllamaBackend, OllamaClient
 
 # The DEFAULT allow-list, not the only one. These two pages never change, which
@@ -88,7 +89,15 @@ def line(res, secs: float, refusals: list) -> str:
 async def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=config.model())
-    ap.add_argument("--start", default="https://example.com")
+    ap.add_argument("--domain", default="", choices=["", *sorted(DOMAINS)],
+                    help="run inside a declared domain: its allow-list, its "
+                         "start page, its refusal wording, and whether a "
+                         "consequential tool may be proposed. Without it the "
+                         "script keeps its own defaults, so existing commands "
+                         "behave exactly as before.")
+    ap.add_argument("--start", default="",
+                    help="start page. Defaults to the domain's own start page "
+                         "with --domain, and to https://example.com without it.")
     ap.add_argument("--allow", action="append", default=[], metavar="DOMAIN",
                     help="let the agent visit this domain too (repeatable). "
                          "The allow-list is the project's outermost boundary: "
@@ -117,7 +126,10 @@ async def main():
     # agent could read where it already is and never navigate back. Added rather
     # than refused, because "--start somewhere" plainly means "let me browse
     # there", and a boundary that has to be stated twice gets stated wrong once.
-    allowed = set(ALLOW) | {d.lower().lstrip(".") for d in args.allow}
+    base = DOMAINS[args.domain] if args.domain else None
+    allowed = set(base.allowed_domains if base else ALLOW)
+    allowed |= {d.lower().lstrip(".") for d in args.allow}
+    args.start = args.start or (base.start_url if base else "https://example.com")
     start_domain = args.start.split("//", 1)[-1].split("/", 1)[0].lower()
     if start_domain and start_domain not in allowed:
         allowed.add(start_domain)
@@ -144,8 +156,19 @@ async def main():
         await page.goto(args.start)
         # Built ONCE, outside the loop. This is what makes the browser the
         # session: a new dispatcher per turn would forget every page read.
-        tools, registry, disp = build_agent(page, allowed)
-        system = system_for(registry)
+        if base is not None:
+            # The domain's own four values, with --allow folded in. Built on
+            # `adapt`/`system_for_domain` rather than beside them, so the
+            # refusal wording the report quotes is the wording this session uses.
+            dom = Domain(name=base.name, allowed_domains=frozenset(allowed),
+                         start_url=args.start, refusal=base.refusal,
+                         allow_consequential=base.allow_consequential,
+                         note=base.note)
+            tools, registry, disp = adapt(page, dom)
+            system = system_for_domain(registry, dom)
+        else:
+            tools, registry, disp = build_agent(page, allowed)
+            system = system_for(registry)
 
         turn = 0
         try:

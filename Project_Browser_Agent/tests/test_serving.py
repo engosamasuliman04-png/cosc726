@@ -219,3 +219,48 @@ def test_an_empty_window_reports_nothing_rather_than_a_perfect_score():
 def test_the_report_prints_without_a_traceback_on_an_empty_window():
     assert "requests      0" in format_health(health([]))
     assert "p95" in format_health(health([R()]))
+
+
+def test_a_standing_refusal_never_counts_as_served():
+    """The whole point of the split. A caller is shown something useful; the
+    numbers do not move, because nothing about the agent moved.
+
+    If this test ever fails, the served rate in the report has been inflated by
+    a message the agent did not produce.
+    """
+    from browser_agent.serving import Response, standing_refusal
+    refusal = "I cannot tell you what applies to you."
+    for reason in ("ungrounded", "unterminated"):
+        r = Response(status="ok", answer="", stop_reason=reason)
+        assert standing_refusal(reason, refusal) == refusal
+        assert r.served is False
+
+
+def test_a_standing_refusal_does_not_touch_the_stop_reason():
+    """F24's lesson, applied before it could happen again: the one-line "fix"
+    for F31 is to end such a run as out_of_scope, and that would be a false
+    account of a run in which the agent refused nothing.
+    """
+    from browser_agent.serving import Response, standing_refusal
+    r = Response(status="ok", answer="", stop_reason="ungrounded")
+    standing_refusal(r.stop_reason, "some refusal")
+    assert r.stop_reason == "ungrounded"
+    assert r.answer == "", "the refusal must not be written into `answer`"
+
+
+def test_no_standing_refusal_where_the_agent_did_decide():
+    """An ending the agent chose must never be overwritten or supplemented.
+    out_of_scope is the agent refusing; this is the architecture covering for
+    an agent that did not.
+    """
+    from browser_agent.serving import standing_refusal
+    for reason in ("complete", "blocked", "out_of_scope", "pending_approval",
+                   "approved", "denied", "capped_steps", "capped_time",
+                   "capped_tokens", "no_progress"):
+        assert standing_refusal(reason, "some refusal") is None, reason
+
+
+def test_no_standing_refusal_without_a_declared_one():
+    """A domain that declares no refusal gets no invented one."""
+    from browser_agent.serving import standing_refusal
+    assert standing_refusal("ungrounded", "") is None

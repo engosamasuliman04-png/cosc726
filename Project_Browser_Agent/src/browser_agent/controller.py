@@ -143,6 +143,29 @@ async def run_agent(client, dispatcher, registry, system, user_message,
             observed = any(t["tier"] == "read" and t["obs"].get("ok") for t in trace)
             if not observed:
                 ungrounded += 1
+                # REVERTED, and the reason is worth more than the change was.
+                #
+                # This hint offers two moves - read, then finish - and names
+                # neither out_of_scope nor blocked. That is arguably wrong: it
+                # steers the model toward answering a question that may be one
+                # it should never answer, which is how F31 played out.
+                #
+                # So it was rewritten to name all three endings. Measured twice
+                # in the health domain, the rewrite changed nothing: the agent
+                # still wrote prose and still never called out_of_scope. Then
+                # T4 - an EVALUATED task - came back `blocked` twice under the
+                # new wording, where the report's numbers were taken under the
+                # old one.
+                #
+                # That is the whole trade. The change bought no compliance where
+                # it was aimed, and put the project's headline numbers at risk
+                # of being silently unreproducible, because this line sits in
+                # run_agent and therefore inside every measured run. A score is
+                # a property of a configuration, and this IS the configuration.
+                #
+                # It goes back. The honest version of the improvement is to
+                # change it and re-run the hour, not to change it and hope the
+                # numbers still hold. Logged in Open Tests at that price (F33).
                 obs = obs_err("ungrounded_answer",
                               "you answered before any tool returned anything",
                               "Call read_page first, then answer with finish(answer, "

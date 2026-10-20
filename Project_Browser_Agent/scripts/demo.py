@@ -26,6 +26,12 @@ MENU = [
     ("Open the web interface",       1,
      "Week 12's serving layer with a face: open http://localhost:8000",
      ["web.py"]),
+    ("Web interface, HEALTH domain",  1,
+     "the submission domain: MedlinePlus and WHO only, with the health refusal",
+     ["web.py", "--domain", "health"]),
+    ("Health domain, in the terminal", 6,
+     "the same domain through the chat interface - easier to screen-record",
+     ["chat.py", "--domain", "health", "--save", "demo_health.txt"]),
     ("Web interface, on Wikipedia",  1,
      "the same, pointed at a site with real content",
      ["web.py", "--allow", "en.wikipedia.org",
@@ -64,7 +70,7 @@ MENU = [
      "the harness itself, in seconds, when the point is the scorecard",
      ["evaluate.py", "--client", "heuristic", "--repeat", "3",
       "--out", "demo_heuristic.json"]),
-    ("The test suite",               1, "184 tests, none of which need a model",
+    ("The test suite",               1, "199 tests, none of which need a model",
      None),
 ]
 

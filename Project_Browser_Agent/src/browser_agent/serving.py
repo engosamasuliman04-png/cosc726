@@ -33,10 +33,49 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+# Imported, not re-declared. A second copy of this set is a second definition
+# of "the agent did not decide this", and the two would drift.
+from .tiers import GUARD_REASONS
+
 # Endings where the agent decided something a caller can act on. The three
 # non-answering ones are here deliberately; see the module docstring.
 GRACEFUL = {"complete", "blocked", "out_of_scope", "pending_approval",
             "approved", "denied"}
+
+
+def standing_refusal(stop_reason: str, refusal: str) -> Optional[str]:
+    """The deployment's refusal text, when the guards stopped the run and the
+    agent itself reached no ending. None otherwise.
+
+    WHY THIS IS NOT A STOP REASON, AND MUST NEVER BECOME ONE.
+
+    Measured on qwen3:1.7b in the health domain, the agent will not call
+    out_of_scope on a symptom question. It writes prose, the grounding guard
+    refuses it twice, and the run ends `ungrounded` with the caller holding
+    nothing - while a correct, carefully worded refusal sits unused in the
+    domain config (F31). Three prompt interventions changed the cost of that
+    failure and never the compliance.
+
+    The one-line "fix" is to let the controller end such a run as
+    `out_of_scope`. That is F24 wearing a different coat: the agent did not
+    refuse, and a record saying it did is a false account of what happened. The
+    blast radius would be zero and the trust radius total, which is the exact
+    sentence this project already had to write once.
+
+    So the split is kept explicit instead:
+
+      what the CALLER is told    the standing refusal, attributed to the
+                                 deployment and NOT to the agent
+      what the RECORD says       `ungrounded` or `unterminated`, unchanged
+      whether it counts SERVED   no. GRACEFUL is untouched, and the health
+                                 report still scores this as stalled
+
+    A caller gets something safe and true. The numbers do not improve because
+    nothing about the agent improved.
+    """
+    if stop_reason in GUARD_REASONS and refusal:
+        return refusal
+    return None
 
 
 @dataclass

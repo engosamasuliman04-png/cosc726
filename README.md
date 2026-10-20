@@ -26,7 +26,7 @@ never performs it.
 |---|---|
 | Model | `qwen3:1.7b`, served locally by Ollama, CPU only |
 | Code | 18 package modules, 8 scripts |
-| Tests | 184, passing — no API key, no network, no model, no GPU |
+| Tests | 199, passing — no API key, no network, no model, no GPU |
 | Reliability | `pass@1` 3/5 · `pass@k` 5/5 · **`pass^k` 1/5** |
 
 This is a weak agent and a strong measurement, and the report does not blur the
@@ -82,7 +82,7 @@ playwright install chromium
 python -m pytest
 ```
 
-Expected: **184 passed**, in about one second, with no API key and no network.
+Expected: **199 passed**, in about one second, with no API key and no network.
 
 To run the agent itself a model runtime is needed — `ollama pull qwen3:1.7b` —
 and then:

@@ -143,3 +143,90 @@ def test_a_domain_is_frozen_so_a_run_cannot_edit_its_own_boundary(dom):
     is a boundary the code inside it can move."""
     with pytest.raises(Exception):
         dom.name = "something else"
+
+
+def test_health_lists_both_host_spellings_of_each_publisher():
+    """medlineplus.gov and www.medlineplus.gov are both live hosts of the same
+    publisher. Listing only one means the site's first link to its own `www`
+    form is refused - which looks like a broken agent and is really a
+    mis-stated boundary.
+
+    The boundary this project intends is "these two publishers", not "these
+    two strings", and this test is what keeps the data saying so.
+    """
+    health = DOMAINS["health"]
+    for host in ("medlineplus.gov", "www.medlineplus.gov",
+                 "who.int", "www.who.int"):
+        assert host in health.allowed_domains, host
+
+
+def test_health_admits_nothing_beyond_those_two_publishers():
+    """The companion to the test above: widening a boundary for convenience is
+    how an allow-list stops being one."""
+    publishers = {"medlineplus.gov", "who.int"}
+    for host in DOMAINS["health"].allowed_domains:
+        root = ".".join(host.split(".")[-2:])
+        assert root in publishers, host
+
+
+@pytest.mark.parametrize("dom", list(DOMAINS.values()), ids=lambda d: d.name)
+def test_the_scope_instruction_names_the_tool_it_requires(dom):
+    """The defect this test exists for (F31): the scope instruction said
+    "say exactly this", while the controller refuses any run that ends in
+    prose. The prompt asked the model for the one thing the termination guard
+    rejects, and the model obeyed the prompt.
+
+    Every ending in this system is a tool call, so a scope instruction that
+    does not name a terminal tool is an instruction the architecture cannot
+    honour. This test is cheap and would have caught it before a live run did.
+    """
+    from browser_agent.fakes import FakePage
+    _, registry, _ = adapt(FakePage("https://example.com/"), dom)
+    prompt = system_for_domain(registry, dom)
+
+    head, _, tail = prompt.partition("<scope>")
+    scope, _, _ = tail.partition("</scope>")
+
+    assert "out_of_scope" in scope, (
+        "the scope section must name the tool that ends an out-of-scope run")
+    assert dom.refusal in scope, "the domain's own refusal text must be in it"
+    assert "say exactly" not in scope.lower(), (
+        "'say' asks for prose, and prose cannot end a run here")
+
+
+@pytest.mark.parametrize("dom", list(DOMAINS.values()), ids=lambda d: d.name)
+def test_a_domain_states_what_is_outside_it_not_only_what_to_say(dom):
+    """F31's deeper half. The prompt carried the refusal TEXT and not the
+    CONDITION that triggers it, so the model was handed a prepared answer to a
+    question it was never told to ask itself.
+
+    From a model's side, "what do I have?" is a factual question resolvable by
+    reading a health page, and nothing in the prompt contradicted that reading.
+    A refusal nobody knows when to use is a refusal that is never used.
+    """
+    from browser_agent.fakes import FakePage
+    _, registry, _ = adapt(FakePage("https://example.com/"), dom)
+    scope = system_for_domain(registry, dom).partition("<scope>")[2] \
+                                            .partition("</scope>")[0]
+
+    assert dom.outside, f"{dom.name} declares no out-of-scope condition"
+    assert dom.outside in scope, "the condition must reach the prompt"
+    # Checked on the whitespace-collapsed, case-folded text: the instruction is
+    # wrapped across lines in the prompt, and a test that breaks on a line wrap
+    # tests the formatter rather than the instruction.
+    flat = " ".join(scope.split()).lower()
+    assert "not read a page first" in flat, (
+        "an out-of-scope request must not be answered after a read either - "
+        "reading first is how F31's run reached three attempts")
+
+
+def test_health_names_the_request_shape_a_small_model_can_match():
+    """A 1.7B model classifies poorly and matches well. "Personal medical
+    advice" is a category it must reason about; "what condition you have" is a
+    sentence it can recognise. This is a prompt-design decision, and it is
+    recorded as a test so it is not silently reverted into a tidier abstraction.
+    """
+    outside = DOMAINS["health"].outside.lower()
+    for phrase in ("what condition you have", "what your symptoms mean",
+                   "what dose", "whether to see a doctor"):
+        assert phrase in outside, phrase

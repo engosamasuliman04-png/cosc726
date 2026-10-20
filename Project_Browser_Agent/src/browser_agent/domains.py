@@ -59,6 +59,13 @@ class Domain:
     allowed_domains: frozenset
     start_url: str
     refusal: str
+    # WHAT falls outside, as opposed to WHAT TO SAY when something does. The
+    # two were conflated until F31: the refusal text was in the prompt and the
+    # trigger for it was not, so the model was handed a prepared answer to a
+    # question it was never told to ask itself. From the model's side, "what do
+    # I have?" IS a factual question resolvable by reading a health page, and
+    # nothing in the prompt contradicted that reading.
+    outside: str = ""
     allow_consequential: bool = False
     # Carried so a results file says which deployment it scored, for the same
     # reason the task set carries a version: a number without its configuration
@@ -78,6 +85,8 @@ RESEARCH = Domain(
     start_url="https://example.com",
     refusal="I can only answer from pages I have read on the sites I am "
             "permitted to visit. Nothing I have read says this.",
+    outside="any request whose answer is not stated on a page you are "
+            "permitted to read",
     note="the original deployment; every run from A to AQ used it",
 )
 
@@ -91,11 +100,20 @@ EDUCATION = Domain(
     # it has actually read.
     refusal="I can show you where this is explained and how to work it out, "
             "but I will not give you the finished answer to submit.",
+    outside="any request to produce finished work the learner will submit as "
+            "their own - an essay, a solved exercise, a completed assignment",
 )
 
 HEALTH = Domain(
     name="health",
-    allowed_domains=frozenset({"www.who.int", "medlineplus.gov"}),
+    # Both host spellings of each source are listed on purpose. medlineplus.gov
+    # and www.medlineplus.gov are both live, and a site that links to its own
+    # `www` form would otherwise have its first in-site navigation refused -
+    # which reads as a broken agent rather than as a correctly enforced
+    # allow-list. The boundary is "these two publishers", not "these two
+    # strings".
+    allowed_domains=frozenset({"www.who.int", "who.int",
+                               "medlineplus.gov", "www.medlineplus.gov"}),
     start_url="https://medlineplus.gov",
     # Refusal as a feature, not a limitation. The boundary is not "I lack
     # information" but "this decision is not mine to make", and the two must not
@@ -104,6 +122,16 @@ HEALTH = Domain(
     refusal="I can share general information published on these sites. I "
             "cannot tell you what applies to you - that is a clinician's "
             "judgement, and more detail from you would not change that.",
+    # Written as the model will meet it: in the first person, naming the shape
+    # of the request rather than a category. "Personal medical advice" is a
+    # label a 1.7B model has to classify into; "what do I have" is a sentence
+    # it can match.
+    outside="any request about YOUR OWN health: what condition you have, "
+            "what your symptoms mean, what you should take, what dose, "
+            "whether to see a doctor, or whether something applies to you. "
+            "A page can say what a condition is. No page can say what YOU "
+            "have. Questions of that shape are outside your scope even when "
+            "a health page is open in front of you",
     note="refusal shape only; not reviewed by a clinician",
 )
 
@@ -118,6 +146,9 @@ FINANCE = Domain(
     refusal="I can read and cite filings. Anything that moves money needs a "
             "named person to approve it, and their approval records who "
             "authorised it - not who is answerable if it was wrong.",
+    outside="any request to move money, place an order, or tell someone what "
+            "to buy, sell or hold. A filing says what a company reported. No "
+            "filing says what YOU should do with your money",
     allow_consequential=True,
     note="refusal shape only; not reviewed by a compliance officer",
 )
@@ -149,7 +180,21 @@ def system_for_domain(registry, domain: Domain) -> str:
     """
     from .prompt import system_for
     base = system_for(registry)
+    # "say" was the original wording here, and it was a defect: this project
+    # forbids prose as an ending, so the instruction asked the model for the
+    # one thing the termination guard refuses. Measured live on
+    # qwen3:1.7b against a health page, the model obeyed the prompt, wrote the
+    # refusal as prose, was refused, wrote it again, and the run ended
+    # `unterminated` with the user getting nothing (F31).
+    #
+    # Every ending in this system is a tool call. A scope instruction that does
+    # not name the tool is not an instruction the architecture can honour.
+    outside = (f"  OUTSIDE YOUR SCOPE in this deployment: {domain.outside}.\n"
+               if domain.outside else "")
     return base.replace(
         "</scope>",
-        f"  When a request falls outside this, say exactly this and nothing "
-        f"more:\n  \"{domain.refusal}\"\n</scope>")
+        f"{outside}"
+        f"  When a request falls outside this, do NOT write an answer and do\n"
+        f"  NOT read a page first. Call out_of_scope(reason) immediately and\n"
+        f"  pass exactly this text as the reason:\n"
+        f"  \"{domain.refusal}\"\n</scope>")

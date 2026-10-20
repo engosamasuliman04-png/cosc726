@@ -11,7 +11,7 @@ Al-Neelain University · College of Graduate Studies · MSc Artificial Intellige
 | Supervisor | Dr Fakhreldin Saeed |
 | Repository | <https://github.com/engosamasuliman04-png/cosc726> |
 | Video demo | FILL IN — paste the unlisted YouTube URL here |
-| Word count | 4,285 (sections 1–6; references and appendices excluded) |
+| Word count | 4,382 (sections 1–6; references and appendices excluded) |
 | Date | October 2026 |
 
 ---
@@ -232,7 +232,7 @@ changing the model underneath the experiment.
 |---|---|
 | Package | 18 modules, 3,154 lines |
 | Scripts | 8 entry points, 2,458 lines |
-| Tests | 184, 2,229 lines |
+| Tests | 199, 2,372 lines |
 | Model | `qwen3:1.7b` via Ollama, CPU only, no GPU at any point |
 
 The system supports two model paths: the native tool-calling API where the
@@ -242,7 +242,7 @@ tested.
 ### 3.2 Testing strategy
 
 The suite runs with **no API key, no network, no model and no GPU**, which is
-also the only way 184 tests run in about one second. Three substitutions make it
+also the only way 199 tests run in about one second. Three substitutions make it
 possible: the browser is a fake page object, the model is a scripted client
 returning pre-set tool calls, and the clock is injected rather than read.
 
@@ -520,7 +520,15 @@ only the first is built. This is the largest correctness gap in the system.
 **Any claim about resistance to injection.** `0/3` compliance is a real result
 for one crude payload, not a property of the system.
 
-**Any health judgement.** By design, and not a limitation to be removed.
+**Any health judgement.** By design, and not a limitation to be removed — but
+the mechanism is not the designed one. Measured in the submission domain, the
+agent's first move on a symptom question was to answer it in prose from model
+memory, before reading anything; the grounding guard refused it, and the
+termination guard refused two further attempts. **It never declined.** The
+scope instruction that should have produced a refusal was itself defective —
+it asked the model to *say* the refusal, in a system where prose cannot end a
+run — and correcting it did not change the outcome (F31). The guards hold; the
+judgement is absent.
 
 **Any number on a different model.** Every figure here is `qwen3:1.7b`.
 
@@ -599,7 +607,7 @@ as such.
 | R4 | Instructions injected into page text are obeyed | Medium / High | Nothing a page says can authorise a tool call; gates are structural, not lexical. No human in the loop | 0/3 compliance on `P1_crude`; 2 of 8 payloads measured |
 | R5 | The agent leaves the authoritative-source allow-list | Medium / High | Gate 4 refuses off-list URLs. No human in the loop | Covered by tests; refusals observed in live runs |
 | R6 | One user's stored facts reach another | Low / High | Per-user keying in `memory.py`. No human in the loop | **0 leaks**, across two users, in runs and in tests |
-| R7 | The agent answers a question that is a clinician's to answer | High / **Severe** | Domain refusal text separating "I lack information" from "this is not my decision"; `out_of_scope` ending. **No automatic oversight — this is the gap** | Refusal shape implemented; **wording not reviewed by a clinician** |
+| R7 | The agent answers a question that is a clinician's to answer | High / **Severe** | The grounding and termination guards, which is **not** what was designed. The domain refusal text and the `out_of_scope` ending exist and are correct; the model does not reach them | **Measured, and the design did not hold: the agent attempted to answer a symptom question three times and the guards refused all three (F31). It never declined.** The refusal wording is also still unreviewed by a clinician |
 | R8 | Cost or denial of service through oversized or repeated requests | Medium / Low | Governor enforces size and rate limits before the model is called | Rejection at 2 s, 0 steps, 0 tokens — 120× cheaper than a served request |
 | R9 | A run consumes unbounded time or tokens | High / Low | Four separately named caps: steps, time, tokens, no-progress | Caps fire in measured runs; each is a distinct stop reason |
 | R10 | A reported score misrepresents reliability | **Realised** / High | Three metrics reported, never one; the task set is versioned; `--vary-seed` is required for independent repeats and the harness warns when it is absent. The reader is the check | `12/12` → `4/4 printed three times` (F22); 18 instruments recorded as having reported falsely |
@@ -647,7 +655,7 @@ repository.
   were written as `.venv\Scripts\python.exe` and fail in PowerShell, which is the
   default shell on Windows, before reaching the interpreter. They were corrected
   only because the command was run rather than trusted.
-- **By testing it.** 184 tests, written alongside the code, caught three defects
+- **By testing it.** 199 tests, written alongside the code, caught three defects
   that reading the output would not have: the truncating percentile, the
   claimed-action guard appending instead of replacing, and the step-watcher's
   ability to influence an outcome.

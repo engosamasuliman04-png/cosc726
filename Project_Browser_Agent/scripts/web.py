@@ -40,7 +40,7 @@ from browser_agent import config
 from browser_agent import run_agent
 from browser_agent.domains import DOMAINS, Domain, adapt, system_for_domain
 from browser_agent.serving import (Governor, Request, format_health, health,
-                                   serve)
+                                   serve, standing_refusal)
 from browser_agent.ollama_client import HttpTransport, OllamaBackend, OllamaClient
 
 PAGE = """<!doctype html>
@@ -83,6 +83,11 @@ PAGE = """<!doctype html>
   .answer { font-size:17px; line-height:1.55; margin:4px 0 10px;
             white-space:pre-wrap }
   .mono { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px }
+  .standing { border-left:3px solid var(--warn); padding:2px 0 2px 12px;
+              margin:10px 0 12px }
+  .standing-tag { font-size:11.5px; letter-spacing:.04em; text-transform:uppercase;
+                  color:var(--warn); margin-bottom:5px }
+  .standing-why { font-size:12.5px; color:var(--dim); line-height:1.5 }
   a { color:var(--ok) }
   @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) { --bg:#f4f7f6; --card:#fff; --line:#dde5e3;
@@ -153,6 +158,16 @@ function render(r){
         + `${esc(r.status)}${r.stop_reason? ' · '+esc(r.stop_reason):''}</div>`;
   if (r.answer) h += `<div class="answer">${esc(r.answer)}</div>`;
   if (r.detail && !r.answer) h += `<div class="answer dim">${esc(r.detail)}</div>`;
+  // Attributed, never presented as the agent's. The label is the point: the
+  // agent did not refuse, and the record above still says so.
+  if (r.standing_refusal)
+    h += `<div class="standing"><div class="standing-tag">`
+       + `not the agent &mdash; this deployment's standing refusal</div>`
+       + `<div class="answer">${esc(r.standing_refusal)}</div>`
+       + `<div class="standing-why">The agent reached no ending of its own. `
+       + `The guards stopped it, the run is recorded as `
+       + `<code>${esc(r.stop_reason)}</code>, and it does not count as served. `
+       + `You are shown this so you are not left with nothing.</div></div>`;
   if (r.evidence_url)
     h += `<div style="font-size:13px">source: <a href="${esc(r.evidence_url)}"`
        + ` target="_blank" rel="noopener">${esc(r.evidence_url)}</a></div>`;
@@ -294,29 +309,58 @@ class Engine:
         else:
             err = None
 
-        with self.lock:
+        # `running` is cleared in a finally, not at the end of the happy path.
+        # It was at the end, and an AttributeError raised while BUILDING this
+        # dict left the flag set: the browser span read "working..." forever,
+        # with no error anywhere and the run long finished. The serving boundary
+        # was written to survive the agent failing; this is the boundary
+        # surviving ITSELF failing, which is the case it did not cover.
+        try:
             if resp is None:
-                self.state["result"] = {"status": "error", "answer": "",
-                                        "detail": f"internal error: {err}",
-                                        "stop_reason": "", "served": False,
-                                        "steps": 0, "tokens": 0, "ms": 0,
-                                        "evidence_url": "", "refusals": [],
-                                        "note": ""}
+                result = {"status": "error", "answer": "",
+                          "detail": f"internal error: {err}",
+                          "stop_reason": "", "served": False,
+                          "steps": 0, "tokens": 0, "ms": 0,
+                          "evidence_url": "", "refusals": [],
+                          "standing_refusal": "", "note": ""}
+                health_text = None
             else:
-                self.responses.append(resp)
                 refusals = [f"{t['tool'] or '-'}: {t['obs']['error']}"
                             for t in trace_holder.get("trace", [])
                             if t["obs"].get("error")]
-                self.state["result"] = {
+                result = {
                     "status": resp.status, "answer": resp.answer,
                     "detail": resp.detail, "stop_reason": resp.stop_reason,
                     "served": resp.served, "steps": resp.steps,
                     "tokens": resp.tokens, "ms": resp.ms,
                     "evidence_url": resp.evidence_url, "refusals": refusals,
+                    # The deployment's standing refusal, when the guards ended
+                    # the run and the agent reached no ending of its own. It is
+                    # a SEPARATE field from `answer` on purpose: the renderer
+                    # labels it as the deployment's, `stop_reason` is untouched,
+                    # and `served` stays False. See serving.standing_refusal.
+                    "standing_refusal": standing_refusal(
+                        resp.stop_reason, self.domain.refusal) or "",
                     "note": NOTES.get(resp.stop_reason or resp.status, "")}
-                self.state["health"] = format_health(health(self.responses),
-                                                     "this session")
-            self.state["running"] = False
+                self.responses.append(resp)
+                health_text = format_health(health(self.responses),
+                                            "this session")
+            with self.lock:
+                self.state["result"] = result
+                if health_text is not None:
+                    self.state["health"] = health_text
+        except Exception as e:
+            with self.lock:
+                self.state["result"] = {
+                    "status": "error", "answer": "",
+                    "detail": f"internal error while reporting the result: "
+                              f"{type(e).__name__}: {e}",
+                    "stop_reason": "", "served": False, "steps": 0,
+                    "tokens": 0, "ms": 0, "evidence_url": "",
+                    "refusals": [], "standing_refusal": "", "note": ""}
+        finally:
+            with self.lock:
+                self.state["running"] = False
 
 
 # One line per ending, so a refusal reads as a decision rather than a fault.
