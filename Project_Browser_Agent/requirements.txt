@@ -1,2 +1,14 @@
-pydantic>=2.0
-playwright>=1.40
+# Runtime dependencies, pinned. These are the exact versions every number in
+# REPORT.md was produced with. Install with:
+#
+#     pip install -r requirements.txt
+#
+# Then, separately, the browser binary Playwright drives:
+#
+#     playwright install chromium
+#
+# Tests and development tooling are in requirements-dev.txt, which includes
+# this file.
+
+pydantic==2.13.5
+playwright==1.63.0

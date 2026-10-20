@@ -1,3 +1,12 @@
+# Everything in requirements.txt, plus the test tooling. This is the file to
+# install from if you intend to run the test suite, which is the normal case
+# for a marker:
+#
+#     pip install -r requirements-dev.txt
+#
+# The suite needs no API key, no network, no model and no GPU.
+
 -r requirements.txt
-pytest>=8.0
-pytest-asyncio>=0.23
+
+pytest==9.1.1
+pytest-asyncio==1.4.0

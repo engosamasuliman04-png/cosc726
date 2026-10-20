@@ -1,3 +1,6 @@
+# The real secrets file. Never committed; `.env.example` is the template.
+.env
+
 __pycache__/
 *.py[cod]
 .venv/
@@ -6,4 +9,9 @@ venv/
 .pytest_cache/
 .vscode/*.local.json
 
-.env
+# Evaluation output. The runs quoted in the report are committed by name
+# (results_AQ.json and friends); ad-hoc runs are not.
+results.json
+demo_*.json
+heuristic.json
+approval.json
