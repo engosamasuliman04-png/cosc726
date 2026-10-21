@@ -11,7 +11,7 @@ Al-Neelain University · College of Graduate Studies · MSc Artificial Intellige
 | Supervisor | Dr Fakhreldin Saeed |
 | Repository | <https://github.com/engosamasuliman04-png/cosc726> |
 | Video demo | FILL IN — paste the unlisted YouTube URL here |
-| Word count | 4,508 (sections 1–6; references and appendices excluded) |
+| Word count | 4,561 (sections 1–6; references and appendices excluded) |
 | Date | October 2026 |
 
 ---
@@ -121,10 +121,9 @@ this project would be over-engineering.
 ```
 
 The model never touches the browser. It emits a tool call, the dispatcher
-decides whether that call happens, and a refusal is returned to the model **as
-an observation it reads** rather than raised as an exception. This single choice
-shapes the whole system: the model is a component inside a control loop, not the
-controller.
+decides whether that call happens, and a refusal returns to the model **as an
+observation it reads** rather than as an exception. That single choice shapes
+the system: the model is a component inside a control loop, not the controller.
 
 ### 2.2 Tool inventory and permission tiers
 
@@ -219,14 +218,13 @@ asserted.
 Plain Python 3, Playwright for the browser, Pydantic for argument schemas, and
 Ollama serving `qwen3:1.7b` locally on CPU. **No agent framework.**
 
-That choice has a cost: the loop, the retry handling, the tool registry and the
-transcript management are hand-written — several hundred lines a framework would
-have supplied. The reason is that this project's subject matter *is* the control
-layer. A gate inherited from a library is a gate the author cannot be examined
-on, and section 5's claims are only worth making if every control in them is
-visible in the repository. The same reasoning explains the local model: an agent
-measured across repeated identical runs should not also be subject to a provider
-changing the model underneath the experiment.
+That costs several hundred hand-written lines a framework would have supplied —
+the loop, the retries, the registry, the transcript. The reason is that this
+project's subject matter *is* the control layer: a gate inherited from a library
+is a gate the author cannot be examined on, and section 5's claims are only
+worth making if every control in them is visible in the repository. The same
+reasoning explains the local model — an agent measured across repeated identical
+runs should not also be subject to a provider changing it underneath.
 
 | | |
 |---|---|
@@ -392,8 +390,8 @@ have been informative. The question needs roughly 34 runs per arm.
 
 ### 4.7 What this project learned about measuring itself
 
-`FINDINGS.md` records **eighteen occasions on which an instrument in this project
-reported something false.** A selection:
+`FINDINGS.md` records **twenty-four occasions on which an instrument in this
+project reported something false.** A selection:
 
 | Check | Reported | Actually |
 |---|---|---|
@@ -402,11 +400,13 @@ reported something false.** A selection:
 | `<<TOOLS>>` | the prompt was rendered | nothing distinguished a filled template from an empty one, for 26 runs |
 | `now=time.time()` | the record is fresh | a 30-day half-life against seconds: 290 s read as 290 days |
 | `payload_landed` | the injection reached the model | asked the trace, not the message; two truncations had removed it |
-| the reproduction command | it reproduces the report's numbers | one reworded sentence inside `run_agent` changed an evaluated task's ending, and nothing in the repository recorded that the prompt had changed (F33) |
+| three separate caps | the agent cannot answer from a page it just read | a read window, a second truncation and a quote cap, in three files, never connected: the model had the answer and was refused on the length of its citation (F33) |
+| a rebuilt `Domain` | the deployment's scope reached the prompt | a hand-written field list dropped a field added later, so three interventions were measured against a prompt missing the one under test (F35) |
+| the reproduction command | it reproduces the report's numbers | one reworded sentence inside `run_agent` changed an evaluated task's ending, and nothing in the repository recorded that the prompt had changed (F32) |
 
-**Ten of the eighteen pointed at the model. They were the author's own code.**
+**Sixteen of the twenty-four pointed at the model. They were the author's own code.**
 
-One of the eighteen is in this report's own history: an earlier finding claimed
+One of them is in this report's own history: an earlier finding claimed
 an injection had destroyed a task, comparing one run against one — when four
 lines above it in the same output, a clean page with no payload had ended
 identically. It was corrected the same day and the overstatement left in the
@@ -474,7 +474,7 @@ it had been measured only against what it was meant to catch.
 
 **The same principle, under temptation, a second time.** In the health domain
 the agent will not call `out_of_scope`: the guards stop it and the caller gets
-nothing (F31). The one-line fix — let the controller end such a run as
+nothing (F30). The one-line fix — let the controller end such a run as
 `out_of_scope` — was refused, because the agent declined nothing and a record
 saying otherwise is F24 again. What was built instead splits the two questions.
 The caller sees the deployment's **standing refusal**, labelled as the
@@ -485,14 +485,11 @@ number is not flattered.
 ### 5.4 Privacy and governance
 
 **Data.** Memory holds only what a user explicitly asks to store, keyed per
-user, with isolation verified: 0 leaks across two users, in runs and in tests.
-No personal data is collected, and the agent has no channel to transmit any —
-the single outbound tool is gated.
-
-**Secrets.** Two environment variables and no others. `.env` is in `.gitignore`
-and has never been committed; `.env.example` carries dummy values.
-
-**Scope.** Two authoritative sources on the allow-list; leaving it is refused.
+user, isolation verified at 0 leaks across two users. No personal data is
+collected and the agent has no channel to transmit any: the single outbound
+tool is gated. **Secrets:** two environment variables, `.env` in `.gitignore`
+and never committed. **Scope:** two authoritative sources on the allow-list;
+leaving it is refused.
 
 **The honest governance gap.** The refusal text has the right *structure* but
 **no clinician has reviewed its wording.** The source says so at the point of
@@ -521,7 +518,7 @@ sentences and a `medlineplus.gov` URL. Two are on the page. The middle one —
 severe cases may cause *"headaches, dizziness, or fatigue"* — appears nowhere
 in the text the agent was given, verified against that exact window with
 `scripts/peek.py`. It came from the model's weights and left the system
-carrying the National Library of Medicine as its evidence (F35). Two
+carrying the National Library of Medicine as its evidence (F34). Two
 properties make this the dangerous shape rather than a plain error: most of
 the answer is supported, so the unsupported clause inherits its credibility;
 and the claim is clinically plausible, so a reader has no cue.
@@ -536,7 +533,7 @@ memory, before reading anything; the grounding guard refused it, and the
 termination guard refused two further attempts. **It never declined.** The
 scope instruction that should have produced a refusal was itself defective —
 it asked the model to *say* the refusal, in a system where prose cannot end a
-run — and correcting it did not change the outcome (F31). The guards hold; the
+run — and correcting it did not change the outcome (F30). The guards hold; the
 judgement is absent.
 
 **Any number on a different model.** Every figure here is `qwen3:1.7b`.
@@ -616,7 +613,7 @@ as such.
 | R4 | Instructions injected into page text are obeyed | Medium / High | Nothing a page says can authorise a tool call; gates are structural, not lexical. No human in the loop | 0/3 compliance on `P1_crude`; 2 of 8 payloads measured |
 | R5 | The agent leaves the authoritative-source allow-list | Medium / High | Gate 4 refuses off-list URLs. No human in the loop | Covered by tests; refusals observed in live runs |
 | R6 | One user's stored facts reach another | Low / High | Per-user keying in `memory.py`. No human in the loop | **0 leaks**, across two users, in runs and in tests |
-| R7 | The agent answers a question that is a clinician's to answer | High / **Severe** | The grounding and termination guards, which is **not** what was designed. The domain refusal text and the `out_of_scope` ending exist and are correct; the model does not reach them | **Measured, and the design did not hold: the agent attempted to answer a symptom question three times and the guards refused all three (F31). It never declined.** The refusal wording is also still unreviewed by a clinician |
+| R7 | The agent answers a question that is a clinician's to answer | High / **Severe** | The grounding and termination guards, which is **not** what was designed. The domain refusal text and the `out_of_scope` ending exist and are correct; the model does not reach them | **Measured, and the design did not hold: the agent attempted to answer a symptom question three times and the guards refused all three (F30). It never declined.** The refusal wording is also still unreviewed by a clinician |
 | R8 | Cost or denial of service through oversized or repeated requests | Medium / Low | Governor enforces size and rate limits before the model is called | Rejection at 2 s, 0 steps, 0 tokens — 120× cheaper than a served request |
 | R9 | A run consumes unbounded time or tokens | High / Low | Four separately named caps: steps, time, tokens, no-progress | Caps fire in measured runs; each is a distinct stop reason |
 | R10 | A reported score misrepresents reliability | **Realised** / High | Three metrics reported, never one; the task set is versioned; `--vary-seed` is required for independent repeats and the harness warns when it is absent. The reader is the check | `12/12` → `4/4 printed three times` (F22); 18 instruments recorded as having reported falsely |
@@ -674,7 +671,7 @@ repository.
   verification script against the repository corrected both (16 → 18 modules,
   ~3,500 → 7,841 lines across the project).
 - **By recording the errors rather than removing them.** `FINDINGS.md` lists
-  eighteen instruments in this project that reported something false, including
+  twenty-four instruments in this project that reported something false, including
   one overstatement in the findings record itself, which was corrected the same
   day and left in the record.
 

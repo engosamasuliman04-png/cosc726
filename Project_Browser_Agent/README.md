@@ -257,7 +257,7 @@ the architecture refusing on its behalf. **The gate is not decoration for a
 model that would have behaved anyway.**
 
 It is also the honest limit of what this project built: the guards hold, and
-the judgement is not there. See F31 in `FINDINGS.md`.
+the judgement is not there. See F30 in `FINDINGS.md`.
 
 ### The gap this project cannot close, shown rather than stated
 
@@ -272,7 +272,7 @@ The guards verified that the answer came after a read and cites the page read.
 **They cannot verify that the page says what the answer claims**, and this is
 what that limitation looks like when it happens: mostly true, entirely
 plausible, and carrying a National Library of Medicine URL as its evidence.
-F35 in `FINDINGS.md`.
+F34 in `FINDINGS.md`.
 
 ## 8 · Reproduce the evaluation
 
@@ -458,6 +458,6 @@ guard refuses it, and it is this project's most frequent refusal.
   for 26 measured runs. Nothing in the code distinguished a filled template from
   an empty one. The fix is a three-line assertion.
 
-`FINDINGS.md` also records **eighteen occasions on which an instrument in this
-project reported something false.** Ten of the eighteen pointed at the model.
+`FINDINGS.md` also records **twenty-four occasions on which an instrument in
+this project reported something false.** Sixteen of the twenty-four pointed at the model.
 They were the author's own code.
