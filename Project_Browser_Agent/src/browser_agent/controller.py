@@ -40,7 +40,7 @@ from .dispatcher import Dispatcher
 from .registry import ToolCall, build_registry
 from .tiers import (HUMAN_REASONS, TERMINAL_REASONS, Decision, FinishArgs,
                     HumanAction, Tier, awaits_human)
-from .tools import BrowserTools, obs_err
+from .tools import MAX_TEXT, BrowserTools, obs_err
 
 @dataclass
 class RunResult:
@@ -408,8 +408,14 @@ def report(res: RunResult):
 
 def build_agent(page, allowed_domains, allow_consequential=False,
                 require_quote=False, stop_mode="split", quote_same_page=False,
-                inject=""):
-    tools = BrowserTools(page, allowed_domains, inject=inject)
+                inject="", max_text=MAX_TEXT):
+    # The quote cap travels with the read window. Set here, in the one place
+    # that already knows both, because a window raised without it produces a
+    # run that reads the page, answers correctly, and is refused by gate 2.
+    from .tiers import _set_quote_max, quote_max_for
+    _set_quote_max(quote_max_for(max_text))
+    tools = BrowserTools(page, allowed_domains, inject=inject,
+                         max_text=max_text)
     registry = build_registry(tools, stop_mode=stop_mode)
     return tools, registry, Dispatcher(tools, registry, allow_consequential,
                                        require_quote, quote_same_page)

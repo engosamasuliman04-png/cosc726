@@ -223,3 +223,61 @@ async def test_a_consequential_tool_is_not_suggested_without_approval(agent):
                                 allow_consequential=True)
     obs, _ = await allowed.dispatch(ToolCall("read_page", {"reason": "confirm purchase"}))
     assert "submit_form" in obs["hint"]
+
+
+def test_the_quote_cap_travels_with_the_read_window():
+    """Measured live: at max_text=2000 the agent read the page, produced an
+    answer and called finish - and gate 2 refused it with
+
+        evidence_quote: String should have at most 300 characters
+
+    The run ended `unterminated` and the caller got nothing. The cause was not
+    the model. 300 was chosen for an 800-character window, and widening the
+    window makes the model quote a longer passage; two numbers in two files had
+    to move together and did not.
+    """
+    from browser_agent.fakes import FakePage
+    from browser_agent.controller import build_agent
+    from browser_agent import tiers
+
+    for window, expected in ((800, 300), (2000, 500), (4000, 1000)):
+        build_agent(FakePage("https://example.com/"), {"example.com"},
+                    max_text=window)
+        assert tiers.QUOTE_MAX == expected, (window, tiers.QUOTE_MAX)
+
+
+def test_the_quote_cap_comes_back_down():
+    """The first version of the coupling used the mutable cap as its own floor,
+    so it only ever ratcheted upward: after one wide-window run, rebuilding at
+    the default returned the WIDE cap and the measured 300 was gone with nothing
+    reporting it.
+
+    A configuration that cannot return to the value the report was measured at
+    is unreproducible, which is F33 in a different file. This test is the one
+    that caught it, and it caught it only because it asserts the default AFTER
+    an override rather than before one.
+    """
+    from browser_agent.fakes import FakePage
+    from browser_agent.controller import build_agent
+    from browser_agent import tiers
+
+    build_agent(FakePage("https://example.com/"), {"example.com"}, max_text=4000)
+    assert tiers.QUOTE_MAX == 1000
+    build_agent(FakePage("https://example.com/"), {"example.com"})
+    assert tiers.QUOTE_MAX == 300, "the default must be reachable again"
+
+
+def test_the_default_quote_cap_is_the_measured_one():
+    from browser_agent.fakes import FakePage
+    from browser_agent.controller import build_agent
+    from browser_agent import tiers
+    from browser_agent.tiers import FinishArgs
+    import pytest as _pytest
+    from pydantic import ValidationError
+
+    build_agent(FakePage("https://example.com/"), {"example.com"})
+    assert tiers.QUOTE_MIN == 300 and tiers.QUOTE_MAX == 300
+    FinishArgs(answer="a", evidence_url="https://x.com/", evidence_quote="q" * 300)
+    with _pytest.raises(ValidationError):
+        FinishArgs(answer="a", evidence_url="https://x.com/",
+                   evidence_quote="q" * 301)

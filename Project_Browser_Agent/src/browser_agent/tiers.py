@@ -11,7 +11,8 @@ from __future__ import annotations
 import re
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (BaseModel, ConfigDict, Field, field_validator,
+                      model_validator)
 
 class Tier(str, Enum):
     READ = "read"
@@ -92,6 +93,56 @@ class ClickLinkArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
     index: int = Field(ge=0, le=29)
 
+# How long an evidence quote may be. 300 was chosen when a READ returned 800
+# characters, and the two are coupled: widen the window and the model quotes a
+# longer passage, which a cap tuned for the narrow window then rejects.
+#
+# Measured. At max_text=2000 the agent read the page, produced an answer and
+# called finish - and gate 2 refused it with
+#   evidence_quote: String should have at most 300 characters
+# The run ended `unterminated` with the caller holding nothing, and the cause
+# was not the model: it was two numbers in two files that had to move together
+# and did not. The same shape as the two truncations in F30.
+#
+# `quote_max_for` is the coupling, written down once. The default window gives
+# exactly 300, so every figure in REPORT.md is unaffected.
+# The floor is a CONSTANT and the current value is a variable, and they are two
+# names on purpose. The first version used the mutable one as its own floor:
+#   def quote_max_for(n): return max(QUOTE_MAX, n // 4)
+# which only ever ratchets upward - once a wide window had raised it to 750,
+# rebuilding at the default returned 750, and the measured 300 was gone with
+# nothing reporting it. A configuration that cannot return to the value the
+# report was measured at is the same defect as F33, found this time by a check
+# that asserted the default after an override instead of before one.
+QUOTE_MIN = 300
+QUOTE_MAX = QUOTE_MIN
+
+
+def quote_max_for(max_text: int) -> int:
+    """The quote cap that belongs with a given read window."""
+    return max(QUOTE_MIN, int(max_text) // 4)
+
+
+def _set_quote_max(n: int) -> None:
+    """Module state, set once by `build_agent`, read by the validators below.
+
+    Global state is a cost and it is paid deliberately: the alternative is
+    rebuilding two Pydantic models at run time, and a schema that is constructed
+    differently from the one the tests exercise is a worse trade than a module
+    variable with a single writer.
+    """
+    global QUOTE_MAX
+    QUOTE_MAX = max(1, int(n))
+
+
+def _check_quote(v: str) -> str:
+    if len(v) > QUOTE_MAX:
+        raise ValueError(
+            f"at most {QUOTE_MAX} characters, got {len(v)}. Quote the one "
+            f"sentence that answers the question, not the passage around it")
+    return v
+
+
 class SubmitFormArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reason: str = Field(min_length=5, max_length=200)
@@ -106,7 +157,9 @@ class FinishArgs(BaseModel):
     # and the page was measured first and could not tell a true answer from an
     # invented one: it scored 0.0 for both. An exact substring can be checked
     # without a threshold, and cannot be produced for something never shown.
-    evidence_quote: str = Field(default="", max_length=300)
+    evidence_quote: str = Field(default="")
+
+    _quote_fits = field_validator("evidence_quote")(_check_quote)
 
 class BlockedArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -164,7 +217,9 @@ class StopArgs(BaseModel):
     reason_type: StopReason
     detail: str = Field(min_length=1, max_length=1000)
     evidence_url: str = Field(default="", max_length=500)
-    evidence_quote: str = Field(default="", max_length=300)
+    evidence_quote: str = Field(default="")
+
+    _quote_fits = field_validator("evidence_quote")(_check_quote)
 
     @model_validator(mode="after")
     def _answered_needs_a_url(self):

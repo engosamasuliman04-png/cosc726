@@ -38,6 +38,7 @@ from playwright.async_api import async_playwright
 
 from browser_agent import config
 from browser_agent import run_agent
+from browser_agent.tools import MAX_TEXT
 from browser_agent.domains import DOMAINS, Domain, adapt, system_for_domain
 from browser_agent.serving import (Governor, Request, format_health, health,
                                    serve, standing_refusal)
@@ -230,8 +231,9 @@ class Engine:
     """
 
     def __init__(self, domain: Domain, model: str, timeout: int, deadline: int,
-                 max_chars: int, rate_limit: int):
+                 max_chars: int, rate_limit: int, max_text: int = MAX_TEXT):
         self.domain, self.model = domain, model
+        self.max_text = int(max_text)
         self.deadline = deadline
         self.gov = Governor(max_chars=max_chars, rate_limit=rate_limit)
         self.timeout = timeout
@@ -254,12 +256,15 @@ class Engine:
         backend = OllamaBackend(self.model,
                                 transport=HttpTransport(timeout=self.timeout),
                                 think=None, num_predict=1024, num_ctx=8192)
-        self.client = OllamaClient(backend)
+        # BOTH caps, set from one flag. Raising only the first changes
+        # nothing the model can see (F30).
+        self.client = OllamaClient(backend, obs_chars=max(800, self.max_text + 400))
         self._pw = await async_playwright().start()
         self._browser = await self._pw.chromium.launch(headless=True)
         self.page = await self._browser.new_page()
         await self.page.goto(self.domain.start_url)
-        self.tools, self.reg, self.disp = adapt(self.page, self.domain)
+        self.tools, self.reg, self.disp = adapt(self.page, self.domain,
+                                                max_text=self.max_text)
         self.system = system_for_domain(self.reg, self.domain)
         # The weights load on the first call and that takes longer than any
         # per-call timeout worth setting. Paid once, here, before anyone asks.
@@ -325,9 +330,18 @@ class Engine:
                           "standing_refusal": "", "note": ""}
                 health_text = None
             else:
-                refusals = [f"{t['tool'] or '-'}: {t['obs']['error']}"
-                            for t in trace_holder.get("trace", [])
-                            if t["obs"].get("error")]
+                # The DETAIL, not just the code. `schema_violation` says a call
+                # was malformed; `[url: Extra inputs are not permitted]` says
+                # which field and why, which is the difference between knowing
+                # the gate fired and knowing what to do about it. The model
+                # already receives this - gate 2 names the offending field in
+                # the observation it reads - and the interface was throwing it
+                # away before the person watching could see it.
+                refusals = [
+                    f"{t['tool'] or '-'}: {t['obs']['error']}"
+                    + (f"  [{t['obs']['detail']}]" if t["obs"].get("detail") else "")
+                    for t in trace_holder.get("trace", [])
+                    if t["obs"].get("error")]
                 result = {
                     "status": resp.status, "answer": resp.answer,
                     "detail": resp.detail, "stop_reason": resp.stop_reason,
@@ -438,6 +452,16 @@ def main():
     ap.add_argument("--timeout", type=int, default=180)
     ap.add_argument("--deadline", type=int, default=600)
     ap.add_argument("--max-chars", type=int, default=400)
+    ap.add_argument("--allow-consequential", action="store_true",
+                    help="let the agent PROPOSE the consequential tool. It "
+                         "still performs nothing: submit_form returns "
+                         "pending_approval and waits for a person. Without "
+                         "this, gate 4 refuses the call outright and the "
+                         "approval loop is never reached.")
+    ap.add_argument("--max-text", type=int, default=MAX_TEXT, metavar="N",
+                    help="characters of page text a READ returns. The default "
+                         "is what every number in REPORT.md was measured at; "
+                         "a run at another value is NOT comparable with them.")
     ap.add_argument("--rate-limit", type=int, default=100)
     args = ap.parse_args()
 
@@ -473,14 +497,17 @@ def main():
         allowed.add(host)
     dom = Domain(name=base.name, allowed_domains=frozenset(allowed),
                  start_url=start, refusal=base.refusal,
-                 allow_consequential=base.allow_consequential,
+                 outside=base.outside,
+                 allow_consequential=(base.allow_consequential
+                                      or args.allow_consequential),
                  note=base.note)
 
     print(f"  model : {args.model}")
     print(f"  domain: {dom.name}   may visit: {', '.join(sorted(allowed))}")
     print("  starting the browser and waking the model…")
     Handler.engine = Engine(dom, args.model, args.timeout, args.deadline,
-                            args.max_chars, args.rate_limit)
+                            args.max_chars, args.rate_limit,
+                            max_text=args.max_text)
     print("\n" + "=" * 54)
     print(f"  READY   ->   http://localhost:{args.port}")
     print("=" * 54)

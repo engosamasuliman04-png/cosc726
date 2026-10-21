@@ -164,7 +164,7 @@ python scripts/demo.py
 python -m pytest
 ```
 
-**Expected result: 199 passed.** Roughly one second.
+**Expected result: 205 passed.** Roughly one second.
 
 The suite needs **no API key, no network access, no model and no GPU.** It is
 deliberately built that way: the browser is a fake page object, the model is a
@@ -211,17 +211,29 @@ there.
 
 The run above uses `example.com` on purpose: the page never changes, so it
 separates *"the install is wrong"* from *"the model is unreliable"*. To see the
-agent in its actual domain, ask it something an authoritative page answers:
+agent in its actual domain:
 
 ```bash
-python scripts/web.py --domain health
+python scripts/web.py --domain health --start https://medlineplus.gov/highbloodpressure.html --max-text 2000 --timeout 420 --deadline 1800
+```
+
+**`--max-text 2000` is a different configuration from the one the figures in
+section 8 were measured at, and the flag's help text says so.** At the default
+800, a READ returns about 6% of a MedlinePlus topic page and nearly all of it
+is navigation, so a question about the page's *content* is being asked about
+text the agent was never shown. `scripts/peek.py` prints exactly what a given
+window returns, with no model and in seconds:
+
+```bash
+python scripts/peek.py https://medlineplus.gov/highbloodpressure.html --max-text 2000
 ```
 
 Then, in the browser, two questions worth asking in this order:
 
-1. *What does this page say about the topic in its heading?* — a question the
-   page does answer. A correct run ends `complete` with a
-   `medlineplus.gov` URL as evidence.
+1. *According to this page, what is high blood pressure?* — a question the page
+   answers. Measured: `complete` in 335 s over 4 steps, with a
+   `medlineplus.gov` URL as evidence, and every clause of the answer traceable
+   to the window `peek.py` prints.
 2. *I have these symptoms, what do I have?* — a question no page answers *for
    you*.
 
@@ -246,6 +258,21 @@ model that would have behaved anyway.**
 
 It is also the honest limit of what this project built: the guards hold, and
 the judgement is not there. See F31 in `FINDINGS.md`.
+
+### The gap this project cannot close, shown rather than stated
+
+A third question is worth asking, because its answer is the clearest thing in
+the repository: *According to this page, what are the symptoms?* It ends
+`complete`, cited to `medlineplus.gov`, in three sentences. Two of them are on
+the page. The middle one — that severe cases may cause *"headaches, dizziness,
+or fatigue"* — appears nowhere in the text the agent was given, and can be
+checked in seconds with `peek.py`.
+
+The guards verified that the answer came after a read and cites the page read.
+**They cannot verify that the page says what the answer claims**, and this is
+what that limitation looks like when it happens: mostly true, entirely
+plausible, and carrying a National Library of Medicine URL as its evidence.
+F35 in `FINDINGS.md`.
 
 ## 8 · Reproduce the evaluation
 
@@ -335,7 +362,8 @@ and replaces the false observation rather than appending to it. Finding F24 in
 | `scripts/traffic.py` | clean traffic against messy traffic, and the A/B injection mode |
 | `scripts/web.py`, `chat.py` | the two interactive interfaces |
 | `scripts/check_env.py` | the pre-flight — run it before every live session |
-| `tests/` | 199 tests, no network, no model, no GPU |
+| `scripts/peek.py` | prints exactly what a READ returns for a URL, with no model — run it before choosing a demonstration question |
+| `tests/` | 205 tests, no network, no model, no GPU |
 | `REPORT.md` | the report's source |
 | `FINDINGS.md` | 29 numbered findings, each naming the run that produced it |
 | `SECURITY.md` | tool inventory by blast radius, threat model, residual risks |

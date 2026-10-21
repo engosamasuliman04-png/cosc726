@@ -254,7 +254,7 @@ def _usage(resp) -> Usage:
 OBS_CHARS = 800
 
 
-def as_sent(obs: dict) -> str:
+def as_sent(obs: dict, limit: int = OBS_CHARS) -> str:
     """Exactly what the model receives for one observation.
 
     A SECOND truncation, in a different file from the first. `read_page` already
@@ -270,7 +270,7 @@ def as_sent(obs: dict) -> str:
     different places. One definition, two callers, no drift: the same fix as the
     <tools> block being rendered from the registry.
     """
-    return json.dumps(obs)[:OBS_CHARS]
+    return json.dumps(obs)[:limit]
 
 
 class OllamaClient:
@@ -282,21 +282,31 @@ class OllamaClient:
              LocalClient machinery rather than duplicating it.
     """
 
-    def __init__(self, backend, force_prose=False, max_retries=2):
+    def __init__(self, backend, force_prose=False, max_retries=2,
+                 obs_chars=OBS_CHARS):
         self.b = backend
         self.max_retries = max_retries
         self.force_prose = force_prose
+        # The SECOND cap. `read_page` caps the page text; this caps the whole
+        # serialised observation, JSON wrapper included - so raising one without
+        # the other changes nothing the model can see. Two caps in two files is
+        # how a payload was cut twice and an attack reported 0% compliance
+        # (see `as_sent`), and it is why this is a parameter on the same call
+        # that sets the other one rather than a constant edited separately.
+        self.obs_chars = int(obs_chars)
         self.attempts = 0
         self.parse_failures = 0
         self.path = None                    # "native" | "prose", set on first call
 
     # ---------- transcript -> ollama messages ----------
-    @staticmethod
-    def _messages(system, transcript):
+    # Not a staticmethod any more: it needs `self.obs_chars` to know where the
+    # second truncation sits.
+    def _messages(self, system, transcript):
         msgs = [{"role": "system", "content": system}]
         for m in transcript:
             if m["role"] == "tool":
-                msgs.append({"role": "tool", "content": as_sent(m["content"])})
+                msgs.append({"role": "tool",
+                             "content": as_sent(m["content"], self.obs_chars)})
             elif "tool_call" in m:
                 tc = m["tool_call"]
                 msgs.append({"role": "assistant", "content": "",

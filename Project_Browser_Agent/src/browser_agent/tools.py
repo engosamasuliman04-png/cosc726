@@ -26,9 +26,27 @@ def obs_err(code: str, detail: str, hint: str = "") -> dict:
 
 
 class BrowserTools:
-    def __init__(self, page, allowed_domains: set[str], inject: str = ""):
+    def __init__(self, page, allowed_domains: set[str], inject: str = "",
+                 max_text: int = MAX_TEXT):
         self.page = page
         self.allowed_domains = allowed_domains
+        # How much of a page a READ returns. The default is MAX_TEXT and every
+        # number in REPORT.md was measured at it, so leaving it alone keeps a
+        # run comparable with the published figures.
+        #
+        # It is a parameter rather than a constant because of F30: measured on
+        # three MedlinePlus topic pages, 800 characters is 5.4-6.6% of the page
+        # and almost all of it is navigation. The limit was never the model's -
+        # qwen3:1.7b runs at num_ctx 8192, roughly 30,000 characters, so the
+        # agent was being shown under 3% of what it could read. A content
+        # question put to such a page fails because the answer was never shown,
+        # and that failure is indistinguishable in a results file from a model
+        # that read the answer and got it wrong.
+        #
+        # Raising it is a CONFIGURATION CHANGE, not a fix: a run at a different
+        # value is not comparable with the published numbers, and anything
+        # reported from one must say so.
+        self.max_text = int(max_text)
         # Week 10. Text an attacker controls, arriving the way a real indirect
         # injection does: inside what a READ tool returns. It is appended to the
         # page text rather than replacing it, because an injection that destroys
@@ -131,7 +149,7 @@ class BrowserTools:
         """
         if not self.inject:
             return text
-        room = max(0, MAX_TEXT - len(self.inject) - 2)
+        room = max(0, self.max_text - len(self.inject) - 2)
         return f"{self.inject}\n\n{text[:room]}"
 
     async def read_page(self) -> dict:
@@ -140,10 +158,11 @@ class BrowserTools:
             text = self._with_payload(raw)
             # The text is kept, not just the fact that a read happened. A quote
             # can only be checked against what was actually returned.
-            self._mark(read=True, text=text[:MAX_TEXT])
+            self._mark(read=True, text=text[:self.max_text])
             return {"ok": True, "url": self.page.url,
                     "title": await self.page.title(),
-                    "text": text[:MAX_TEXT], "truncated": len(raw) > MAX_TEXT,
+                    "text": text[:self.max_text],
+                    "truncated": len(raw) > self.max_text,
                     "state_changed": False}
         except Exception as e:
             return obs_err("read_failed", str(e), "The page may not have loaded.")

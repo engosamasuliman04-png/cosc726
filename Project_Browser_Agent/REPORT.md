@@ -11,7 +11,7 @@ Al-Neelain University · College of Graduate Studies · MSc Artificial Intellige
 | Supervisor | Dr Fakhreldin Saeed |
 | Repository | <https://github.com/engosamasuliman04-png/cosc726> |
 | Video demo | FILL IN — paste the unlisted YouTube URL here |
-| Word count | 4,442 (sections 1–6; references and appendices excluded) |
+| Word count | 4,508 (sections 1–6; references and appendices excluded) |
 | Date | October 2026 |
 
 ---
@@ -232,7 +232,7 @@ changing the model underneath the experiment.
 |---|---|
 | Package | 18 modules, 3,154 lines |
 | Scripts | 8 entry points, 2,458 lines |
-| Tests | 199, 2,372 lines |
+| Tests | 205, 2,372 lines |
 | Model | `qwen3:1.7b` via Ollama, CPU only, no GPU at any point |
 
 The system supports two model paths: the native tool-calling API where the
@@ -242,7 +242,7 @@ tested.
 ### 3.2 Testing strategy
 
 The suite runs with **no API key, no network, no model and no GPU**, which is
-also the only way 199 tests run in about one second. Three substitutions make it
+also the only way 205 tests run in about one second. Three substitutions make it
 possible: the browser is a fake page object, the model is a scripted client
 returning pre-set tool calls, and the clock is injected rather than read.
 
@@ -265,13 +265,9 @@ one. The fix is a three-line assertion. Measured afterwards: one task moved from
 `unterminated` to `complete` with evidence, and refusals fell from 2 to 1 — not
 to 0, which is itself informative.
 
-Three more are tabulated in section 4.7: a `p95` computed with `int()`, which
-truncated and so always flattered; a guard that appended its correction after
-the false answer instead of replacing it, leaving the false citation in the
-evidence field; and the headline number that was one run printed three times.
-Two of those were caught by tests rather than by reading output, which is the
-common thread — all four were quantities that nothing in the system could
-check.
+Three more are tabulated in section 4.7. Two of them were caught by tests
+rather than by reading output, which is the common thread: all four were
+quantities that nothing in the system could check.
 
 ---
 
@@ -376,15 +372,14 @@ not what its text resembles.
 
 ### 4.5 Failure modes, including one not fixed
 
-- **`unterminated` is the most common failure in every measurement taken.** The
-  model stops without reaching any of the nine endings. It is not fixed.
+- **`unterminated` is the most common failure in every measurement taken**, and
+  it is not fixed: the model stops without reaching any of the nine endings.
 - **Four of five tasks are flaky.** `T2` is the only stable pass.
 - **Plan-first mode produced 0/5 valid plans**, and re-planning re-emitted the
-  identical plan. The one encouraging number alongside it: **0 gate refusals —
-  not one step of five invalid plans reached the browser.**
-- **Memory retrieval fails.** Isolation holds with 0 leaks across two users;
-  retrieval fails because lexical scoring cannot connect the query word
-  "heading" to the stored value "Example Domain".
+  identical plan — alongside **0 gate refusals: not one step of five invalid
+  plans reached the browser.**
+- **Memory retrieval fails** (isolation holds, 0 leaks): lexical scoring cannot
+  connect the query word "heading" to the stored value "Example Domain".
 
 ### 4.6 An experiment that could not answer its question
 
@@ -518,7 +513,18 @@ completes one step reliably and fails at two.
 **Answering a question whose page does not contain the answer.** The guards
 check that an answer came *after* a read and cites the page read. **They do not
 check that the page says what the answer claims.** Two different guarantees;
-only the first is built. This is the largest correctness gap in the system.
+only the first is built, and this is the largest correctness gap in the system.
+
+It is no longer only stated. Asked what a MedlinePlus page says about the
+symptoms of high blood pressure, the agent ended `complete` with three
+sentences and a `medlineplus.gov` URL. Two are on the page. The middle one —
+severe cases may cause *"headaches, dizziness, or fatigue"* — appears nowhere
+in the text the agent was given, verified against that exact window with
+`scripts/peek.py`. It came from the model's weights and left the system
+carrying the National Library of Medicine as its evidence (F35). Two
+properties make this the dangerous shape rather than a plain error: most of
+the answer is supported, so the unsupported clause inherits its credibility;
+and the claim is clinically plausible, so a reader has no cue.
 
 **Any claim about resistance to injection.** `0/3` compliance is a real result
 for one crude payload, not a property of the system.
@@ -659,7 +665,7 @@ repository.
   were written as `.venv\Scripts\python.exe` and fail in PowerShell, which is the
   default shell on Windows, before reaching the interpreter. They were corrected
   only because the command was run rather than trusted.
-- **By testing it.** 199 tests, written alongside the code, caught three defects
+- **By testing it.** 205 tests, written alongside the code, caught three defects
   that reading the output would not have: the truncating percentile, the
   claimed-action guard appending instead of replacing, and the step-watcher's
   ability to influence an outcome.

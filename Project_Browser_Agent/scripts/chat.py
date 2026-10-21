@@ -162,6 +162,13 @@ async def main():
             # refusal wording the report quotes is the wording this session uses.
             dom = Domain(name=base.name, allowed_domains=frozenset(allowed),
                          start_url=args.start, refusal=base.refusal,
+                         # `outside` was dropped here and in web.py when these
+                         # rebuilds were written, so the out-of-scope CONDITION
+                         # never reached the prompt while the refusal TEXT did.
+                         # Three measured attempts to make the agent call
+                         # out_of_scope were run against a prompt that did not
+                         # contain the fix. See F36.
+                         outside=base.outside,
                          allow_consequential=base.allow_consequential,
                          note=base.note)
             tools, registry, disp = adapt(page, dom)

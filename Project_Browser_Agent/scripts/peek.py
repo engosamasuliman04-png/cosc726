@@ -26,7 +26,7 @@ from playwright.async_api import async_playwright
 from browser_agent.tools import MAX_TEXT
 
 
-async def peek(url: str, headed: bool) -> int:
+async def peek(url: str, headed: bool, max_text: int) -> int:
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=not headed)
         page = await browser.new_page()
@@ -39,17 +39,21 @@ async def peek(url: str, headed: bool) -> int:
 
         raw = await page.locator("body").inner_text()
         title = await page.title()
-        visible = raw[:MAX_TEXT]
+        visible = raw[:max_text]
 
         print(f"url      : {page.url}")
         if page.url.rstrip("/") != url.rstrip("/"):
             print(f"           (redirected from {url} - check your allow-list "
                   f"covers the host above)")
         print(f"title    : {title}")
+        label = "the default" if max_text == MAX_TEXT else "--max-text"
         print(f"body text: {len(raw)} characters, of which the agent sees "
-              f"{len(visible)} (MAX_TEXT = {MAX_TEXT})")
-        if len(raw) > MAX_TEXT:
-            pct = 100 * MAX_TEXT / len(raw)
+              f"{len(visible)} ({label} = {max_text})")
+        if max_text != MAX_TEXT:
+            print(f"           NOTE: the figures in REPORT.md were measured "
+                  f"at {MAX_TEXT}, not at {max_text}.")
+        if len(raw) > max_text:
+            pct = 100 * max_text / len(raw)
             print(f"           that is {pct:.1f}% of the page")
         print()
         print("=" * 70)
@@ -71,8 +75,12 @@ def main() -> int:
     ap.add_argument("url", help="the page to inspect")
     ap.add_argument("--headed", action="store_true",
                     help="show the browser window while loading")
+    ap.add_argument("--max-text", type=int, default=MAX_TEXT, metavar="N",
+                    help="inspect the window a run would use. Pass the same "
+                         "value the run was given, or this prints what the "
+                         "DEFAULT shows and not what that run saw.")
     args = ap.parse_args()
-    return asyncio.run(peek(args.url, args.headed))
+    return asyncio.run(peek(args.url, args.headed, args.max_text))
 
 
 if __name__ == "__main__":

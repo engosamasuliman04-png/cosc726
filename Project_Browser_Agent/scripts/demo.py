@@ -70,7 +70,7 @@ MENU = [
      "the harness itself, in seconds, when the point is the scorecard",
      ["evaluate.py", "--client", "heuristic", "--repeat", "3",
       "--out", "demo_heuristic.json"]),
-    ("The test suite",               1, "199 tests, none of which need a model",
+    ("The test suite",               1, "205 tests, none of which need a model",
      None),
 ]
 

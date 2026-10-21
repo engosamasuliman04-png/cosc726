@@ -230,3 +230,73 @@ def test_health_names_the_request_shape_a_small_model_can_match():
     for phrase in ("what condition you have", "what your symptoms mean",
                    "what dose", "whether to see a doctor"):
         assert phrase in outside, phrase
+
+
+def test_raising_one_truncation_without_the_other_changes_nothing():
+    """F30's trap. `read_page` caps the page text; `as_sent` caps the whole
+    serialised observation, JSON wrapper included. Raise the first alone and the
+    model still sees ~800 characters minus the wrapper - the change looks
+    applied, is measured, and does nothing.
+
+    Two caps in two files is how an injected payload was cut twice while the
+    harness reported 0% compliance. This test is the thing that says so out loud.
+    """
+    from browser_agent.fakes import FakePage
+    from browser_agent.tools import BrowserTools
+    from browser_agent.ollama_client import as_sent
+
+    page = FakePage("https://example.com/")
+    tools = BrowserTools(page, {"example.com"}, max_text=4000)
+    assert tools.max_text == 4000
+
+    obs = {"ok": True, "url": "https://example.com/", "title": "t",
+           "text": "x" * 4000}
+    assert len(as_sent(obs)) == 800, "the second cap is still 800 by default"
+    assert len(as_sent(obs, 4400)) > 800, "and it has to be raised too"
+
+
+def test_the_read_cap_defaults_to_the_measured_value():
+    """Every number in REPORT.md was taken at MAX_TEXT. A default that drifts
+    makes the published figures unreproducible without anything saying so -
+    which is exactly F33, and it cost a revert."""
+    from browser_agent.fakes import FakePage
+    from browser_agent.tools import BrowserTools, MAX_TEXT
+    from browser_agent.controller import build_agent
+    assert MAX_TEXT == 800
+    assert BrowserTools(FakePage("https://example.com/"), set()).max_text == 800
+    tools, _, _ = build_agent(FakePage("https://example.com/"), {"example.com"})
+    assert tools.max_text == 800
+
+
+def test_a_rebuilt_domain_carries_every_field_the_prompt_depends_on():
+    """F36. Both interactive scripts rebuild the Domain to fold in --allow and
+    --start, and both listed the fields by hand. `outside` was added later and
+    neither list was updated, so the out-of-scope CONDITION silently stopped
+    reaching the prompt while the refusal TEXT still did.
+
+    Three measured attempts to make the agent call out_of_scope were then run
+    against a prompt that did not contain the fix, and the conclusion drawn -
+    'the limit is the model, not the instruction' - was drawn from runs that
+    never carried the instruction.
+
+    A hand-written field list is a silent dropper by construction: adding a
+    field to the dataclass cannot make the copies fail. This test is what makes
+    it fail.
+    """
+    import dataclasses
+    from browser_agent.fakes import FakePage
+
+    base = DOMAINS["health"]
+    rebuilt = dataclasses.replace(base, allowed_domains=frozenset({"x.test"}))
+
+    for f in dataclasses.fields(Domain):
+        if f.name == "allowed_domains":
+            continue
+        assert getattr(rebuilt, f.name) == getattr(base, f.name), (
+            f"{f.name} was lost when the domain was rebuilt")
+
+    _, reg, _ = adapt(FakePage("https://x.test/"), rebuilt)
+    scope = system_for_domain(reg, rebuilt).partition("<scope>")[2] \
+                                           .partition("</scope>")[0]
+    assert base.outside in scope, "the out-of-scope condition must survive"
+    assert base.refusal in scope, "and so must the refusal text"
