@@ -69,32 +69,46 @@ in this repository warms the model before timing anything.
 
 ## 3 · Install
 
-Copy-pasteable, from nothing to installed. On Windows use PowerShell.
+Copy-pasteable, from nothing to installed. **The Windows commands do not activate
+the virtual environment**, and that is deliberate: on a default Windows install
+`.venv\Scripts\activate` fails with *"running scripts is disabled on this
+system"*, because PowerShell's execution policy blocks it. Asking a marker to
+change a security setting on their own machine to run a coursework project is
+the wrong trade, and calling the interpreter by its full path needs no
+activation and no setting changed. Every other Windows command in this README
+uses the same form.
 
-```bash
-git clone FILL-IN-REPO-URL.git
-cd Project_Browser_Agent
-python -m venv .venv
-```
-
-```bash
-source .venv/bin/activate
-```
-
-On Windows instead:
+**Windows (PowerShell)** — run these from the repository root after cloning:
 
 ```powershell
-.venv\Scripts\activate
+cd Project_Browser_Agent
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m playwright install chromium
 ```
 
-Then, on either platform:
+**macOS and Linux:**
 
 ```bash
+cd Project_Browser_Agent
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements-dev.txt
 pip install -e .
 playwright install chromium
+```
+
+Then, on either platform, the model — this one is not a Python package and is
+about 1.4 GB:
+
+```bash
 ollama pull qwen3:1.7b
 ```
+
+From here on, every command in this README is written for Windows as
+`.\.venv\Scripts\python.exe …`. On macOS or Linux, with the environment
+activated, that is just `python …`.
 
 ## 4 · Configure
 
@@ -107,8 +121,8 @@ The system reads **two** environment variables, and nothing else:
 
 Both can be set in a `.env` file instead, which is the normal route:
 
-```bash
-cp .env.example .env
+```powershell
+Copy-Item .env.example .env
 ```
 
 Then edit the `model = ...` line in `.env`. Ollama needs the **full tag,
@@ -127,8 +141,8 @@ on it.
 
 One command starts the system in its domain, with a browser interface:
 
-```bash
-python scripts/web.py --domain health
+```powershell
+.\.venv\Scripts\python.exe scripts\web.py --domain health
 ```
 
 Wait for the line `READY`, then open <http://localhost:8000> in a browser.
@@ -154,14 +168,14 @@ environment first.
 For a menu over every demonstration in this repository — each entry labelled
 with what it costs in minutes and what it is supposed to prove:
 
-```bash
-python scripts/demo.py
+```powershell
+.\.venv\Scripts\python.exe scripts\demo.py
 ```
 
 ## 6 · Test
 
-```bash
-python -m pytest
+```powershell
+.\.venv\Scripts\python.exe -m pytest
 ```
 
 **Expected result: 205 passed.** Roughly one second.
@@ -174,8 +188,8 @@ without anything external being reachable.
 
 ## 7 · A worked example
 
-```bash
-python scripts/run_agent.py --headed --slow 800 --goal "What is the exact heading text on this page?"
+```powershell
+.\.venv\Scripts\python.exe scripts\run_agent.py --headed --slow 800 --goal "What is the exact heading text on this page?"
 ```
 
 `--headed` opens a visible Chromium window; `--slow 800` pauses 800 ms between
@@ -213,8 +227,8 @@ The run above uses `example.com` on purpose: the page never changes, so it
 separates *"the install is wrong"* from *"the model is unreliable"*. To see the
 agent in its actual domain:
 
-```bash
-python scripts/web.py --domain health --start https://medlineplus.gov/highbloodpressure.html --max-text 2000 --timeout 420 --deadline 1800
+```powershell
+.\.venv\Scripts\python.exe scripts\web.py --domain health --start https://medlineplus.gov/highbloodpressure.html --max-text 2000 --timeout 420 --deadline 1800
 ```
 
 **`--max-text 2000` is a different configuration from the one the figures in
@@ -224,8 +238,8 @@ is navigation, so a question about the page's *content* is being asked about
 text the agent was never shown. `scripts/peek.py` prints exactly what a given
 window returns, with no model and in seconds:
 
-```bash
-python scripts/peek.py https://medlineplus.gov/highbloodpressure.html --max-text 2000
+```powershell
+.\.venv\Scripts\python.exe scripts\peek.py https://medlineplus.gov/highbloodpressure.html --max-text 2000
 ```
 
 Then, in the browser, two questions worth asking in this order:
@@ -276,8 +290,8 @@ F34 in `FINDINGS.md`.
 
 ## 8 · Reproduce the evaluation
 
-```bash
-python scripts/evaluate.py --cold --repeat 3 --vary-seed --temp 0.7 --refuse-claimed-action --out results.json
+```powershell
+.\.venv\Scripts\python.exe scripts\evaluate.py --cold --repeat 3 --vary-seed --temp 0.7 --refuse-claimed-action --out results.json
 ```
 
 Five tasks, three attempts each, cold between runs. **About one hour on a
@@ -302,8 +316,8 @@ on another machine should land near these numbers, not exactly on them — and
 versions. If you want a **deterministic** check of the harness itself rather
 than of the model, this takes one second and needs no model at all:
 
-```bash
-python scripts/evaluate.py --client heuristic --repeat 3 --out heuristic.json
+```powershell
+.\.venv\Scripts\python.exe scripts\evaluate.py --client heuristic --repeat 3 --out heuristic.json
 ```
 
 The task set is versioned in `scripts/evaluate.py` as `TASKSET`, printed at the
@@ -322,8 +336,8 @@ and hands the decision to a person.
 
 **How to trigger it.**
 
-```bash
-python scripts/evaluate.py --only "T5 needs approval" --allow-consequential --human-replies --out approval.json
+```powershell
+.\.venv\Scripts\python.exe scripts\evaluate.py --only "T5 needs approval" --allow-consequential --human-replies --out approval.json
 ```
 
 **What the human reviewer sees.** The run stops, prints `pending_approval` and

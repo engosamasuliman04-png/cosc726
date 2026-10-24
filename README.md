@@ -54,31 +54,31 @@ each naming the run that produced it · [`SECURITY.md`](./Project_Browser_Agent/
 From a clean machine. Prerequisites and the full explanation of each step are in
 the project's own README.
 
+**Windows (PowerShell).** These do not activate the virtual environment: on a
+default Windows install `.\.venv\Scripts\activate` fails with *"running scripts
+is disabled on this system"*, and calling the interpreter by its full path needs
+no activation and no security setting changed.
+
+```powershell
+git clone https://github.com/engosamasuliman04-png/cosc726.git
+cd cosc726\Project_Browser_Agent
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m playwright install chromium
+.\.venv\Scripts\python.exe -m pytest
+```
+
+**macOS and Linux:**
+
 ```bash
 git clone https://github.com/engosamasuliman04-png/cosc726.git
 cd cosc726/Project_Browser_Agent
-python -m venv .venv
-```
-
-```bash
+python3 -m venv .venv
 source .venv/bin/activate
-```
-
-On Windows instead:
-
-```powershell
-.\.venv\Scripts\activate
-```
-
-Then, on either platform:
-
-```bash
 pip install -r requirements-dev.txt
 pip install -e .
 playwright install chromium
-```
-
-```bash
 python -m pytest
 ```
 
@@ -87,8 +87,8 @@ Expected: **205 passed**, in about one second, with no API key and no network.
 To run the agent itself a model runtime is needed — `ollama pull qwen3:1.7b` —
 and then:
 
-```bash
-python scripts/web.py --domain health
+```powershell
+.\.venv\Scripts\python.exe scripts\web.py --domain health
 ```
 
 ## Repository map
