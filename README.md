@@ -42,7 +42,7 @@ Read that file, not this one, to run the system.
 |---|---|
 | Repository | <https://github.com/engosamasuliman04-png/cosc726> |
 | Report | [`Project_Browser_Agent/REPORT.md`](./Project_Browser_Agent/REPORT.md) |
-| Video demo | FILL IN — paste the unlisted YouTube URL here |
+| Video demo | <https://youtu.be/Ka_-CXpzKpg> |
 
 Supporting documents, both in `Project_Browser_Agent/`:
 [`FINDINGS.md`](./Project_Browser_Agent/FINDINGS.md) — 29 numbered findings,

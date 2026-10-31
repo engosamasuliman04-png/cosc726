@@ -6,8 +6,8 @@ Al-Neelain University · College of Graduate Studies · MSc Artificial Intellige
 Author: Osama Suliman Merghani
 Supervisor: Dr Fakhreldin Saeed
 
-Repository: FILL IN — paste the GitHub URL of this repository here
-Video demo: FILL IN — paste the unlisted YouTube URL here before submission
+Repository: https://github.com/engosamasuliman04-png/cosc726
+Video demo: https://youtu.be/Ka_-CXpzKpg
 
 ---
 

@@ -10,7 +10,7 @@ Al-Neelain University · College of Graduate Studies · MSc Artificial Intellige
 | Team identifier | Individual submission — no team |
 | Supervisor | Dr Fakhreldin Saeed |
 | Repository | <https://github.com/engosamasuliman04-png/cosc726> |
-| Video demo | FILL IN — paste the unlisted YouTube URL here |
+| Video demo | <https://youtu.be/Ka_-CXpzKpg> |
 | Word count | 4,561 (sections 1–6; references and appendices excluded) |
 | Date | October 2026 |
 
